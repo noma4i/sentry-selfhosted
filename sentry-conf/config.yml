@@ -1,0 +1,26 @@
+mail.host: 'smtp'
+
+system.internal-url-prefix: 'http://web:9000'
+system.secret-key: '!!changeme!!'
+
+filestore.backend: 'filesystem'
+filestore.options:
+  location: '/data/files'
+dsym.cache-path: '/data/dsym-cache'
+releasefile.cache-path: '/data/releasefile-cache'
+
+filestore.profiles-backend: 's3'
+filestore.profiles-options:
+  bucket_acl: "private"
+  default_acl: "private"
+  access_key: "sentry"
+  secret_key: "sentry"
+  bucket_name: "profiles"
+  region_name: "us-east-1"
+  endpoint_url: "http://seaweedfs:8333"
+  addressing_style: "path"
+  signature_version: "s3v4"
+
+symbolicator.enabled: false
+
+transaction-events.force-disable-internal-project: true

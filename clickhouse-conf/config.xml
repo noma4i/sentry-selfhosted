@@ -1,0 +1,38 @@
+<clickhouse>
+    <max_server_memory_usage>0</max_server_memory_usage>
+    <listen_host>0.0.0.0</listen_host>
+    <logger>
+        <level>warning</level>
+        <console>true</console>
+    </logger>
+
+    <!-- Small caches to reduce memory footprint -->
+    <uncompressed_cache_size>8388608</uncompressed_cache_size>
+    <mark_cache_size>16777216</mark_cache_size>
+
+    <!-- Disable system logs to save memory -->
+    <query_thread_log remove="remove"/>
+    <query_log remove="remove"/>
+    <text_log remove="remove"/>
+    <trace_log remove="remove"/>
+    <metric_log remove="remove"/>
+    <asynchronous_metric_log remove="remove"/>
+    <session_log remove="remove"/>
+    <part_log remove="remove"/>
+
+    <allow_nullable_key>1</allow_nullable_key>
+
+    <profiles>
+        <default>
+            <max_memory_usage>157286400</max_memory_usage>
+            <log_queries>0</log_queries>
+            <log_query_threads>0</log_query_threads>
+        </default>
+    </profiles>
+
+    <merge_tree>
+        <enable_mixed_granularity_parts>1</enable_mixed_granularity_parts>
+        <max_suspicious_broken_parts>100</max_suspicious_broken_parts>
+    </merge_tree>
+
+</clickhouse>

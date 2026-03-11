@@ -1,0 +1,22 @@
+# Generated at init
+relay-conf/credentials.json
+
+# GeoIP data
+geoip/*.mmdb
+
+# Docker volumes
+*.sqlite
+
+# OS
+.DS_Store
+
+# Claude
+CLAUDE.md
+**/CLAUDE.md
+
+# Build artifacts in source repos
+source/**/node_modules/
+source/**/.venv/
+source/**/target/
+source/**/__pycache__/
+source/**/*.pyc
