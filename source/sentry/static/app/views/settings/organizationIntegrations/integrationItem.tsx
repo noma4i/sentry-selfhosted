@@ -1,0 +1,56 @@
+import styled from '@emotion/styled';
+
+import {Flex} from '@sentry/scraps/layout';
+
+import type {Integration} from 'sentry/types/integrations';
+import {IntegrationIcon} from 'sentry/views/settings/organizationIntegrations/integrationIcon';
+
+type Props = {
+  integration: Integration;
+  compact?: boolean;
+};
+
+export function IntegrationItem({integration, compact = false}: Props) {
+  return (
+    <Flex align="center">
+      <div>
+        <IntegrationIcon size={compact ? 22 : 32} integration={integration} />
+      </div>
+      <Labels compact={compact}>
+        <IntegrationName data-test-id="integration-name">
+          {integration.name}
+        </IntegrationName>
+        <DomainName compact={compact}>{integration.domainName}</DomainName>
+      </Labels>
+    </Flex>
+  );
+}
+
+const Labels = styled('div')<{compact: boolean}>`
+  box-sizing: border-box;
+  display: flex;
+  ${p => (p.compact ? 'align-items: center;' : '')};
+  flex-direction: ${p => (p.compact ? 'row' : 'column')};
+  padding-left: ${p => p.theme.space.md};
+  min-width: 0;
+  justify-content: center;
+`;
+
+const IntegrationName = styled('div')`
+  font-size: ${p => p.theme.font.size.md};
+  font-weight: ${p => p.theme.font.weight.sans.medium};
+  line-height: ${p => p.theme.font.lineHeight.default};
+`;
+
+// Not using the overflowEllipsis style import here
+// as it sets width 100% which causes layout issues in the
+// integration list.
+const DomainName = styled('div')<{compact: boolean}>`
+  color: ${p => p.theme.tokens.content.secondary};
+  margin-left: ${p => (p.compact ? p.theme.space.md : 'inherit')};
+  margin-top: ${p => (p.compact ? 'inherit' : 0)};
+  font-size: ${p => p.theme.font.size.sm};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: ${p => p.theme.font.lineHeight.comfortable};
+`;

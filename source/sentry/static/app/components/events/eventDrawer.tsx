@@ -1,0 +1,93 @@
+import styled from '@emotion/styled';
+
+import {InputGroup} from '@sentry/scraps/input';
+import {Flex, type FlexProps} from '@sentry/scraps/layout';
+
+import {Breadcrumbs as NavigationBreadcrumbs} from 'sentry/components/breadcrumbs';
+import {DrawerBody, DrawerHeader} from 'sentry/components/globalDrawer/components';
+import {MIN_NAV_HEIGHT} from 'sentry/views/issueDetails/streamline/eventTitle';
+
+export const Header = styled('h3')`
+  display: block;
+  font-size: ${p => p.theme.font.size.xl};
+  font-weight: ${p => p.theme.font.weight.sans.medium};
+  margin: 0;
+`;
+
+export const SearchInput = InputGroup.Input;
+
+export const NavigationCrumbs = styled(NavigationBreadcrumbs)`
+  margin: 0;
+  padding: 0;
+`;
+
+export function CrumbContainer(props: FlexProps<'div'>) {
+  return <Flex align="center" gap="md" {...props} />;
+}
+
+export const ShortId = styled('div')`
+  font-family: ${p => p.theme.font.family.sans};
+  font-size: ${p => p.theme.font.size.md};
+  line-height: 1;
+`;
+
+export const EventDrawerContainer = styled('div')`
+  height: 100%;
+  display: grid;
+  grid-template-rows: max-content max-content auto;
+`;
+
+export const EventDrawerHeader = styled(DrawerHeader)`
+  position: unset;
+  max-height: ${MIN_NAV_HEIGHT}px;
+  min-height: ${MIN_NAV_HEIGHT}px;
+  align-items: center;
+  box-shadow: none;
+  border-bottom: 1px solid ${p => p.theme.tokens.border.primary};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+`;
+
+export const EventNavigator = styled('div')`
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: ${p => p.theme.space.md};
+  padding: ${p => p.theme.space.sm} 24px;
+  background: ${p => p.theme.tokens.background.primary};
+  z-index: 2; /* Just above EventStickyControls */
+  min-height: ${MIN_NAV_HEIGHT}px;
+  /* eslint-disable-next-line @sentry/scraps/use-semantic-token */
+  box-shadow: ${p => p.theme.tokens.border.primary} 0 1px;
+`;
+
+export const EventStickyControls = styled('div')`
+  display: flex;
+  justify-content: space-between;
+  gap: ${p => p.theme.space.md};
+  position: sticky;
+  top: -${p => p.theme.space.xl};
+  margin-block: -${p => p.theme.space.xl};
+  padding-block: ${p => p.theme.space.xl};
+  background: ${p => p.theme.tokens.background.primary};
+  z-index: 1; /* Just below EventNavigator */
+
+  /* Make this full-width inside DrawerBody */
+  margin-inline: -24px;
+  padding-inline: 24px;
+`;
+
+export const EventDrawerBody = styled(DrawerBody)`
+  overflow: auto;
+  overscroll-behavior: contain;
+  /* Move the scrollbar to the left edge */
+  scroll-margin: 0 ${p => p.theme.space.xl};
+  display: flex;
+  gap: ${p => p.theme.space.xl};
+  flex-direction: column;
+  direction: rtl;
+  * {
+    direction: ltr;
+  }
+`;

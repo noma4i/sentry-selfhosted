@@ -1,0 +1,118 @@
+import styled from '@emotion/styled';
+
+import * as Layout from 'sentry/components/layouts/thirds';
+
+type Props = {
+  /**
+   * The page title
+   */
+  title: React.ReactNode;
+  /**
+   * A CTA Button
+   */
+  action?: React.ReactNode;
+  body?: React.ReactNode;
+  className?: string;
+  /**
+   * Use a purple color for the subtitle
+   */
+  colorSubtitle?: boolean;
+  /**
+   * Icon to the left of the title
+   */
+  icon?: React.ReactNode;
+  /**
+   * Disables font styles in the title. Allows for more custom titles.
+   */
+  noTitleStyles?: boolean;
+  subtitle?: React.ReactNode;
+  tabs?: React.ReactNode;
+};
+
+function UnstyledSettingsPageHeader({
+  icon,
+  title,
+  subtitle,
+  colorSubtitle,
+  action,
+  body,
+  tabs,
+  noTitleStyles = false,
+  ...props
+}: Props) {
+  // If Header is narrow, use align-items to center <Action>.
+  // Otherwise, use a fixed margin to prevent an odd alignment.
+  // This is needed as Actions could be a button or a dropdown.
+  const isNarrow = !subtitle;
+
+  return (
+    <div {...props}>
+      <TitleAndActions isNarrow={isNarrow}>
+        <TitleWrapper>
+          {icon && <Icon>{icon}</Icon>}
+          {title && (
+            <Title tabs={tabs} styled={noTitleStyles}>
+              <Layout.Title>{title}</Layout.Title>
+              {subtitle && <Subtitle colorSubtitle={colorSubtitle}>{subtitle}</Subtitle>}
+            </Title>
+          )}
+        </TitleWrapper>
+        {action && <Action isNarrow={isNarrow}>{action}</Action>}
+      </TitleAndActions>
+
+      {body && <BodyWrapper>{body}</BodyWrapper>}
+      {tabs && <TabsWrapper>{tabs}</TabsWrapper>}
+    </div>
+  );
+}
+
+interface TitleProps extends React.HTMLAttributes<HTMLDivElement> {
+  styled?: boolean;
+  tabs?: React.ReactNode;
+}
+
+const TitleAndActions = styled('div')<{isNarrow?: boolean}>`
+  display: flex;
+  align-items: ${p => (p.isNarrow ? 'center' : 'flex-start')};
+`;
+const TitleWrapper = styled('div')`
+  flex: 1;
+`;
+
+const Title = styled('div')<TitleProps>`
+  ${p =>
+    !p.styled && `font-size: 20px; font-weight: ${p.theme.font.weight.sans.medium};`};
+  margin: ${p => p.theme.space['3xl']} ${p => p.theme.space.xl}
+    ${p => p.theme.space['2xl']} 0;
+`;
+const Subtitle = styled('div')<{colorSubtitle?: boolean}>`
+  color: ${p =>
+    p.colorSubtitle ? p.theme.tokens.content.accent : p.theme.colors.gray500};
+  font-weight: ${p => p.theme.font.weight.sans.regular};
+  font-size: ${p => p.theme.font.size.md};
+  padding: ${p => p.theme.space.lg} 0 0;
+`;
+
+const Icon = styled('div')`
+  margin-right: ${p => p.theme.space.md};
+`;
+
+const Action = styled('div')<{isNarrow?: boolean}>`
+  margin-top: ${p => (p.isNarrow ? '0' : p.theme.space['3xl'])};
+`;
+
+export const SettingsPageHeader = styled(UnstyledSettingsPageHeader)<
+  Omit<React.HTMLProps<HTMLDivElement>, keyof Props> & Props
+>`
+  font-size: 14px;
+  margin-top: -${p => p.theme.space['3xl']};
+`;
+
+const BodyWrapper = styled('div')`
+  flex: 1;
+  margin: 0 0 ${p => p.theme.space['2xl']};
+`;
+const TabsWrapper = styled('div')`
+  flex: 1;
+  margin: 0;
+`;

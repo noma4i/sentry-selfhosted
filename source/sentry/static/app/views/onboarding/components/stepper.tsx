@@ -1,0 +1,60 @@
+import styled from '@emotion/styled';
+import {motion} from 'framer-motion';
+
+import {testableTransition} from 'sentry/utils/testableTransition';
+
+const StepperContainer = styled('div')`
+  display: flex;
+  flex-direction: row;
+  gap: ${p => p.theme.space.md};
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+`;
+
+const StepperIndicator = styled('span')<{clickable?: boolean}>`
+  height: 8px;
+  width: 80px;
+  background-color: ${p => p.theme.colors.gray100};
+  cursor: ${p => (p.clickable ? 'pointer' : 'default')};
+`;
+
+const StepperTransitionIndicator = styled(motion.span)`
+  height: 8px;
+  width: 80px;
+  background-color: ${p => p.theme.tokens.background.accent.vibrant};
+  position: absolute;
+`;
+
+type Props = Omit<React.HTMLAttributes<HTMLDivElement>, 'onClick'> & {
+  currentStepIndex: number;
+  numSteps: number;
+  onClick: (stepIndex: number) => void;
+};
+
+export function Stepper({currentStepIndex, numSteps, onClick, ...props}: Props) {
+  return (
+    <StepperContainer {...props}>
+      {new Array(numSteps).fill(0).map((_, i) => (
+        <StepperIndicator
+          key={i}
+          onClick={() => i < currentStepIndex && onClick(i)}
+          clickable={i < currentStepIndex}
+        >
+          {currentStepIndex === i && (
+            <StepperTransitionIndicator
+              layout
+              transition={testableTransition({
+                type: 'spring',
+                stiffness: 175,
+                damping: 18,
+              })}
+              initial={false}
+              layoutId="animation"
+            />
+          )}
+        </StepperIndicator>
+      ))}
+    </StepperContainer>
+  );
+}

@@ -1,0 +1,126 @@
+import {Fragment, useEffect} from 'react';
+import {useTheme} from '@emotion/react';
+import styled from '@emotion/styled';
+
+import {Badge} from '@sentry/scraps/badge';
+import {Button} from '@sentry/scraps/button';
+import {Tooltip} from '@sentry/scraps/tooltip';
+
+import type {Client} from 'sentry/api';
+import {AlertStore} from 'sentry/stores/alertStore';
+import type {Organization} from 'sentry/types/organization';
+import {useApi} from 'sentry/utils/useApi';
+
+const POLICY_URL =
+  'https://www.notion.so/sentry/Sentry-Rules-for-Handling-Customer-Data-9612532c37e14eeb943a6a584abbac99';
+
+const SUPERUSER_MESSAGE = 'You are in superuser mode.';
+const WARNING_MESSAGE = (
+  <Fragment>
+    Please refer to Sentry's{' '}
+    <a href={POLICY_URL} target="_none">
+      rules for handling customer data
+    </a>
+    . Misuse of superuser will result in an unpleasant coffee chat with Legal, Security,
+    and HR.
+  </Fragment>
+);
+
+export function shouldExcludeOrg(organization?: Organization | null) {
+  return organization?.slug === 'demo';
+}
+
+function handleExitSuperuser(api: Client) {
+  api
+    .requestPromise('/staff-auth/', {
+      method: 'DELETE',
+    })
+    .then(() => window.location.reload());
+}
+
+function ExitSuperuserButton() {
+  const theme = useTheme();
+  const api = useApi({persistInFlight: true});
+  return (
+    <Button
+      style={{
+        top: theme.space.xs,
+        bottom: theme.space.sm,
+      }}
+      size="sm"
+      priority="primary"
+      onClick={() => {
+        handleExitSuperuser(api);
+      }}
+    >
+      Exit Superuser Mode
+    </Button>
+  );
+}
+
+type Props = {
+  className?: string;
+  organization?: Organization;
+};
+
+function SuperuserWarning({organization, className}: Props) {
+  const isExcludedOrg = shouldExcludeOrg(organization);
+
+  useEffect(() => {
+    if (!isExcludedOrg) {
+      AlertStore.addAlert({
+        id: 'superuser-warning',
+        message: (
+          <Fragment>
+            {SUPERUSER_MESSAGE} {WARNING_MESSAGE}
+          </Fragment>
+        ),
+        variant: 'danger',
+        opaque: true,
+        neverExpire: true,
+        noDuplicates: true,
+      });
+    }
+  }, [isExcludedOrg]);
+
+  if (isExcludedOrg) {
+    return null;
+  }
+
+  return (
+    <StyledBadge variant="warning" className={className}>
+      <Tooltip
+        isHoverable
+        title={
+          <TooltipContent>
+            <Content>{WARNING_MESSAGE}</Content>
+            <ExitSuperuserButton />
+          </TooltipContent>
+        }
+      >
+        Superuser
+      </Tooltip>
+    </StyledBadge>
+  );
+}
+
+const StyledBadge = styled(Badge)`
+  color: ${p => p.theme.tokens.content.onVibrant.light};
+  background: ${p => p.theme.tokens.background.danger.vibrant};
+`;
+
+const TooltipContent = styled('div')`
+  padding: ${p => p.theme.space.xs} ${p => p.theme.space['2xs']};
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: ${p => p.theme.space.md};
+  text-align: left;
+`;
+
+const Content = styled('p')`
+  margin: 0;
+`;
+
+export default SuperuserWarning;

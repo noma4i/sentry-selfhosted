@@ -1,0 +1,71 @@
+import logging
+from collections.abc import Callable
+from functools import wraps
+from typing import Any
+
+from sentry.search.events.constants import TIMEOUT_ERROR_MESSAGE
+from sentry.snuba import discover
+from sentry.utils import metrics, snuba
+from sentry.utils.sdk import capture_exception
+
+from .base import ExportError
+
+
+# Adapted into decorator from 'src/sentry/api/endpoints/organization_events.py'
+def handle_snuba_errors(
+    logger: logging.Logger,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return func(*args, **kwargs)
+            except discover.InvalidSearchQuery as error:
+                metrics.incr("dataexport.error", tags={"error": str(error)}, sample_rate=1.0)
+                logger.warning("dataexport.error: %s", str(error))
+                capture_exception(error)
+                raise ExportError("Invalid query. Please fix the query and try again.")
+            except snuba.QueryOutsideRetentionError as error:
+                metrics.incr("dataexport.error", tags={"error": str(error)}, sample_rate=1.0)
+                logger.warning("dataexport.error: %s", str(error))
+                capture_exception(error)
+                raise ExportError("Invalid date range. Please try a more recent date range.")
+            except snuba.QueryIllegalTypeOfArgument as error:
+                metrics.incr("dataexport.error", tags={"error": str(error)}, sample_rate=1.0)
+                logger.warning("dataexport.error: %s", str(error))
+                capture_exception(error)
+                raise ExportError("Invalid query. Argument to function is wrong type.")
+            except snuba.SnubaError as error:
+                metrics.incr("dataexport.error", tags={"error": str(error)}, sample_rate=1.0)
+                logger.warning("dataexport.error: %s", str(error))
+                capture_exception(error)
+                message = "Internal error. Please try again."
+                recoverable = False
+                if isinstance(
+                    error,
+                    (
+                        snuba.RateLimitExceeded,
+                        snuba.QueryMemoryLimitExceeded,
+                        snuba.QueryExecutionTimeMaximum,
+                        snuba.QueryTooManySimultaneous,
+                    ),
+                ):
+                    message = TIMEOUT_ERROR_MESSAGE
+                    recoverable = True
+                elif isinstance(
+                    error,
+                    (
+                        snuba.DatasetSelectionError,
+                        snuba.QueryConnectionFailed,
+                        snuba.QuerySizeExceeded,
+                        snuba.QueryExecutionError,
+                        snuba.SchemaValidationError,
+                        snuba.UnqualifiedQueryError,
+                    ),
+                ):
+                    message = "Internal error. Your query failed to run."
+                raise ExportError(message, recoverable=recoverable)
+
+        return wrapped
+
+    return wrapper

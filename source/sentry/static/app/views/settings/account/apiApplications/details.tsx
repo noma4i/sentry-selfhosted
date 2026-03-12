@@ -1,0 +1,201 @@
+import {Fragment} from 'react';
+import styled from '@emotion/styled';
+
+import {Alert} from '@sentry/scraps/alert';
+import {Tag} from '@sentry/scraps/badge';
+import {Button} from '@sentry/scraps/button';
+
+import {addErrorMessage} from 'sentry/actionCreators/indicator';
+import {openModal} from 'sentry/actionCreators/modal';
+import Confirm from 'sentry/components/confirm';
+import {FieldGroup} from 'sentry/components/forms/fieldGroup';
+import Form from 'sentry/components/forms/form';
+import FormField from 'sentry/components/forms/formField';
+import JsonForm from 'sentry/components/forms/jsonForm';
+import {LoadingError} from 'sentry/components/loadingError';
+import {LoadingIndicator} from 'sentry/components/loadingIndicator';
+import {Panel} from 'sentry/components/panels/panel';
+import {PanelBody} from 'sentry/components/panels/panelBody';
+import {PanelHeader} from 'sentry/components/panels/panelHeader';
+import {SentryDocumentTitle} from 'sentry/components/sentryDocumentTitle';
+import {TextCopyInput} from 'sentry/components/textCopyInput';
+import {forms as apiApplication} from 'sentry/data/forms/apiApplication';
+import {t} from 'sentry/locale';
+import {ConfigStore} from 'sentry/stores/configStore';
+import type {ApiApplication} from 'sentry/types/user';
+import getApiUrl from 'sentry/utils/api/getApiUrl';
+import {
+  useApiQuery,
+  useMutation,
+  useQueryClient,
+  type ApiQueryKey,
+} from 'sentry/utils/queryClient';
+import {useApi} from 'sentry/utils/useApi';
+import {useParams} from 'sentry/utils/useParams';
+import {SettingsPageHeader} from 'sentry/views/settings/components/settingsPageHeader';
+
+const PAGE_TITLE = t('Application Details');
+
+function getAppQueryKey(appId: string): ApiQueryKey {
+  return [
+    getApiUrl(`/api-applications/$appId/`, {
+      path: {appId},
+    }),
+  ];
+}
+
+interface RotateClientSecretResponse {
+  clientSecret: string;
+}
+
+function ApiApplicationsDetails() {
+  const api = useApi();
+  const {appId} = useParams<{appId: string}>();
+  const queryClient = useQueryClient();
+
+  const urlPrefix = ConfigStore.get('urlPrefix');
+
+  const {
+    data: app,
+    isPending,
+    isError,
+    refetch,
+  } = useApiQuery<ApiApplication>(getAppQueryKey(appId), {
+    staleTime: 0,
+  });
+
+  const {mutate: rotateClientSecret} = useMutation<RotateClientSecretResponse>({
+    mutationFn: () => {
+      return api.requestPromise(`/api-applications/${appId}/rotate-secret/`, {
+        method: 'POST',
+      });
+    },
+    onSuccess: data => {
+      openModal(({Body, Header}) => (
+        <Fragment>
+          <Header>{t('Your new Client Secret')}</Header>
+          <Body>
+            <Alert.Container>
+              <Alert variant="info">
+                {t('This will be the only time your client secret is visible!')}
+              </Alert>
+            </Alert.Container>
+            <TextCopyInput aria-label={t('new-client-secret')}>
+              {data.clientSecret}
+            </TextCopyInput>
+          </Body>
+        </Fragment>
+      ));
+    },
+    onError: () => {
+      addErrorMessage(t('Error rotating secret'));
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({queryKey: getAppQueryKey(appId)});
+    },
+  });
+
+  if (isPending) {
+    return <LoadingIndicator />;
+  }
+
+  if (isError) {
+    return <LoadingError onRetry={refetch} />;
+  }
+
+  return (
+    <SentryDocumentTitle title={PAGE_TITLE}>
+      <SettingsPageHeader
+        title={PAGE_TITLE}
+        subtitle={
+          <Tag variant={app.isPublic ? 'info' : 'muted'}>
+            {app.isPublic ? t('Public Client') : t('Confidential Client')}
+          </Tag>
+        }
+      />
+
+      {app.isPublic && (
+        <Alert.Container>
+          <Alert variant="info" showIcon>
+            {t(
+              'This is a public client, designed for CLIs, native apps, or SPAs. It uses PKCE, device authorization, and refresh token rotation for security instead of a client secret.'
+            )}
+          </Alert>
+        </Alert.Container>
+      )}
+
+      <Form
+        apiMethod="PUT"
+        apiEndpoint={`/api-applications/${appId}/`}
+        saveOnBlur
+        allowUndo
+        initialData={app}
+        onSubmitError={() => addErrorMessage('Unable to save change')}
+      >
+        <JsonForm forms={apiApplication} />
+
+        <Panel>
+          <PanelHeader>{t('Credentials')}</PanelHeader>
+
+          <PanelBody>
+            <FormField name="clientID" label="Client ID" flexibleControlStateSize>
+              {({value}: any) => <TextCopyInput>{value}</TextCopyInput>}
+            </FormField>
+
+            {!app.isPublic && (
+              <FormField
+                name="clientSecret"
+                label={t('Client Secret')}
+                help={t(`Your secret is only available briefly after application creation. Make
+                    sure to save this value!`)}
+                flexibleControlStateSize
+              >
+                {({value}: any) =>
+                  value ? (
+                    <TextCopyInput>{value}</TextCopyInput>
+                  ) : (
+                    <ClientSecret>
+                      <HiddenSecret>{t('hidden')}</HiddenSecret>
+                      <Confirm
+                        onConfirm={rotateClientSecret}
+                        message={t(
+                          'Are you sure you want to rotate the client secret? The current one will not be usable anymore, and this cannot be undone.'
+                        )}
+                      >
+                        <Button size="xs" priority="danger">
+                          {t('Rotate client secret')}
+                        </Button>
+                      </Confirm>
+                    </ClientSecret>
+                  )
+                }
+              </FormField>
+            )}
+
+            <FieldGroup label={t('Authorization URL')} flexibleControlStateSize>
+              <TextCopyInput>{`${urlPrefix}/oauth/authorize/`}</TextCopyInput>
+            </FieldGroup>
+
+            <FieldGroup label={t('Token URL')} flexibleControlStateSize>
+              <TextCopyInput>{`${urlPrefix}/oauth/token/`}</TextCopyInput>
+            </FieldGroup>
+          </PanelBody>
+        </Panel>
+      </Form>
+    </SentryDocumentTitle>
+  );
+}
+
+const HiddenSecret = styled('span')`
+  width: 100px;
+  font-style: italic;
+`;
+
+const ClientSecret = styled('div')`
+  display: flex;
+  justify-content: right;
+  align-items: center;
+  margin-right: 0;
+`;
+
+export default ApiApplicationsDetails;

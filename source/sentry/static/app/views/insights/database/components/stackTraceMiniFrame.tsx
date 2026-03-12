@@ -1,0 +1,161 @@
+import {Fragment} from 'react';
+import styled from '@emotion/styled';
+
+import {ProjectAvatar} from '@sentry/scraps/avatar';
+import {ExternalLink} from '@sentry/scraps/link';
+
+import {useStacktraceLink} from 'sentry/components/events/interfaces/frame/useStacktraceLink';
+import {t, tct} from 'sentry/locale';
+import type {Project} from 'sentry/types/project';
+import {getIntegrationIcon, getIntegrationSourceUrl} from 'sentry/utils/integrationUtil';
+import {useOrganization} from 'sentry/utils/useOrganization';
+import {useProjects} from 'sentry/utils/useProjects';
+import {MODULE_DOC_LINK} from 'sentry/views/insights/database/settings';
+
+interface Props {
+  frame: Parameters<typeof useStacktraceLink>[0]['frame'];
+  event?: Parameters<typeof useStacktraceLink>[0]['event'];
+  projectId?: string;
+}
+
+export function StackTraceMiniFrame({frame, event, projectId}: Props) {
+  const {projects} = useProjects();
+  const project = projects.find(p => p.id === projectId);
+
+  return (
+    <FrameContainer>
+      {project && (
+        <ProjectAvatarContainer>
+          <ProjectAvatar project={project} size={16} />
+        </ProjectAvatarContainer>
+      )}
+      {frame.filename && <Emphasize>{frame?.filename}</Emphasize>}
+      {frame.function && (
+        <Fragment>
+          <Deemphasize> {t('in')} </Deemphasize>
+          <Emphasize>{frame?.function}</Emphasize>
+        </Fragment>
+      )}
+      {frame.lineNo && (
+        <Fragment>
+          <Deemphasize> {t('at line')} </Deemphasize>
+          <Emphasize>{frame?.lineNo}</Emphasize>
+        </Fragment>
+      )}
+
+      {event && project && (
+        <PushRight>
+          <SourceCodeIntegrationLink event={event} project={project} frame={frame} />
+        </PushRight>
+      )}
+    </FrameContainer>
+  );
+}
+
+type MissingFrameProps = {
+  system?: string;
+};
+
+export function MissingFrame({system}: MissingFrameProps) {
+  const documentation = <ExternalLink href={`${MODULE_DOC_LINK}#query-sources`} />;
+
+  const errorMessage =
+    system === 'mongodb'
+      ? tct(
+          'Query sources are not currently supported for MongoDB queries. Learn more in our [documentation:documentation].',
+          {documentation}
+        )
+      : tct(
+          'Could not find query source in the selected date range. Learn more in our [documentation:documentation].',
+          {documentation}
+        );
+
+  return (
+    <FrameContainer>
+      <Deemphasize>{errorMessage}</Deemphasize>
+    </FrameContainer>
+  );
+}
+
+const FrameContainer = styled('div')`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: ${p => p.theme.space.xs};
+  padding: ${p => p.theme.space.lg} ${p => p.theme.space.xl};
+
+  font-family: ${p => p.theme.font.family.sans};
+  font-size: ${p => p.theme.font.size.md};
+
+  border-top: 1px solid ${p => p.theme.tokens.border.primary};
+
+  background: ${p => p.theme.tokens.background.tertiary};
+`;
+
+const ProjectAvatarContainer = styled('div')`
+  margin-right: ${p => p.theme.space.md};
+`;
+
+const Emphasize = styled('span')`
+  color: ${p => p.theme.colors.gray800};
+`;
+
+const Deemphasize = styled('span')`
+  color: ${p => p.theme.tokens.content.secondary};
+`;
+
+const PushRight = styled('span')`
+  margin-left: auto;
+`;
+
+interface SourceCodeIntegrationLinkProps {
+  event: Parameters<typeof useStacktraceLink>[0]['event'];
+  frame: Parameters<typeof useStacktraceLink>[0]['frame'];
+  project: Project;
+}
+function SourceCodeIntegrationLink({
+  event,
+  project,
+  frame,
+}: SourceCodeIntegrationLinkProps) {
+  const organization = useOrganization();
+
+  const {data: match, isPending} = useStacktraceLink({
+    event,
+    frame,
+    orgSlug: organization.slug,
+    projectSlug: project.slug,
+  });
+
+  if (match?.config && match.sourceUrl && frame.lineNo && !isPending) {
+    return (
+      <DeemphasizedExternalLink
+        href={getIntegrationSourceUrl(
+          match.config.provider.key,
+          match.sourceUrl,
+          frame.lineNo
+        )}
+        openInNewTab
+      >
+        <StyledIconWrapper>
+          {getIntegrationIcon(match.config.provider.key, 'sm')}
+        </StyledIconWrapper>
+        {t('Open this line in %s', match.config.provider.name)}
+      </DeemphasizedExternalLink>
+    );
+  }
+
+  return null;
+}
+
+const DeemphasizedExternalLink = styled(ExternalLink)`
+  display: flex;
+  align-items: center;
+  gap: ${p => p.theme.space.sm};
+  color: ${p => p.theme.tokens.content.secondary};
+`;
+
+const StyledIconWrapper = styled('span')`
+  color: inherit;
+  line-height: 0;
+`;

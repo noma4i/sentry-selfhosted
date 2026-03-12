@@ -1,0 +1,16 @@
+import styled from '@emotion/styled';
+
+// This is required to offer components that sit between this settings header
+// and i.e. dropdowns, some zIndex layer room
+//
+// e.g. app/views/settings/metric/triggers/chart/
+const HEADER_Z_INDEX_OFFSET = 5;
+
+export const SettingsHeader = styled('div')`
+  position: sticky;
+  top: 0;
+  z-index: ${p => p.theme.zIndex.header + HEADER_Z_INDEX_OFFSET};
+  padding: ${p => p.theme.space.xl} ${p => p.theme.space['3xl']};
+  border-bottom: 1px solid ${p => p.theme.tokens.border.primary};
+  background: ${p => p.theme.tokens.background.primary};
+`;

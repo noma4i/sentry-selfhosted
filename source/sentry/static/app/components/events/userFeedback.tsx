@@ -1,0 +1,95 @@
+import styled from '@emotion/styled';
+
+import {Button} from '@sentry/scraps/button';
+import {Flex} from '@sentry/scraps/layout';
+import {Link} from '@sentry/scraps/link';
+
+import {ActivityAuthor} from 'sentry/components/activity/author';
+import {ActivityItem} from 'sentry/components/activity/item';
+import {IconCopy} from 'sentry/icons';
+import {t} from 'sentry/locale';
+import type {UserReport} from 'sentry/types/group';
+import {escape, nl2br} from 'sentry/utils';
+import {useCopyToClipboard} from 'sentry/utils/useCopyToClipboard';
+
+type Props = {
+  issueId: string;
+  orgSlug: string;
+  report: UserReport;
+  className?: string;
+  showEventLink?: boolean;
+};
+
+export function EventUserFeedback({
+  className,
+  report,
+  orgSlug,
+  issueId,
+  showEventLink = true,
+}: Props) {
+  const user = report.user || {
+    name: report.name,
+    email: report.email,
+    id: '',
+    username: '',
+    ip_address: '',
+  };
+
+  const {copy} = useCopyToClipboard();
+
+  return (
+    <div className={className}>
+      <StyledActivityItem
+        date={report.dateCreated}
+        author={{type: 'user', user}}
+        header={
+          <Flex align="center" gap="md">
+            <ActivityAuthor>{report.name}</ActivityAuthor>
+            <CopyButton
+              priority="transparent"
+              onClick={() =>
+                copy(report.email, {successMessage: t('Copied email to clipboard')})
+              }
+              size="zero"
+              tooltipProps={{delay: 0}}
+              icon={<StyledIconCopy size="xs" />}
+            >
+              {report.email}
+            </CopyButton>
+
+            {report.eventID && showEventLink && (
+              <ViewEventLink
+                to={`/organizations/${orgSlug}/issues/${issueId}/events/${report.eventID}/?referrer=user-feedback`}
+              >
+                {t('View event')}
+              </ViewEventLink>
+            )}
+          </Flex>
+        }
+      >
+        <p
+          dangerouslySetInnerHTML={{
+            __html: nl2br(escape(report.comments)),
+          }}
+        />
+      </StyledActivityItem>
+    </div>
+  );
+}
+
+const StyledActivityItem = styled(ActivityItem)`
+  margin-bottom: 0;
+`;
+
+const CopyButton = styled(Button)`
+  color: ${p => p.theme.tokens.content.secondary};
+  font-size: ${p => p.theme.font.size.sm};
+  font-weight: ${p => p.theme.font.weight.sans.regular};
+`;
+
+const StyledIconCopy = styled(IconCopy)``;
+
+const ViewEventLink = styled(Link)`
+  font-weight: ${p => p.theme.font.weight.sans.regular};
+  font-size: 0.9em;
+`;

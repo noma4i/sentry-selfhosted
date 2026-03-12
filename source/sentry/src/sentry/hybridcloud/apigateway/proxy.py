@@ -1,0 +1,171 @@
+"""
+Utilities related to proxying a request to a cell
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Generator
+from urllib.parse import urljoin, urlparse
+from wsgiref.util import is_hop_by_hop
+
+from django.conf import settings
+from django.http import HttpRequest, HttpResponse, StreamingHttpResponse
+from django.http.response import HttpResponseBase
+from requests import Response as ExternalResponse
+from requests import request as external_request
+from requests.exceptions import Timeout
+
+from sentry import options
+from sentry.api.exceptions import RequestTimeout
+from sentry.objectstore.endpoints.organization import ChunkedEncodingDecoder, get_raw_body
+from sentry.silo.util import (
+    PROXY_APIGATEWAY_HEADER,
+    PROXY_DIRECT_LOCATION_HEADER,
+    clean_outbound_headers,
+    clean_proxy_headers,
+)
+from sentry.types.region import (
+    Cell,
+    CellResolutionError,
+    get_cell_by_name,
+    get_cell_for_organization,
+)
+from sentry.utils import metrics
+from sentry.utils.http import BodyWithLength
+
+logger = logging.getLogger(__name__)
+
+# Endpoints that handle uploaded files have higher timeouts configured
+# and we need to honor those timeouts when proxying.
+# See frontend/templates/sites-enabled/sentry.io in getsentry/ops
+ENDPOINT_TIMEOUT_OVERRIDE = {
+    "sentry-api-0-chunk-upload": 90.0,
+    "sentry-api-0-organization-release-files": 90.0,
+    "sentry-api-0-project-release-files": 90.0,
+    "sentry-api-0-dsym-files": 90.0,
+    "sentry-api-0-installable-preprod-artifact-download": 90.0,
+    "sentry-api-0-project-preprod-artifact-download": 90.0,
+    "sentry-api-0-organization-preprod-artifact-size-analysis-download": 90.0,
+    "sentry-api-0-organization-objectstore": 90.0,
+}
+
+# stream 0.5 MB at a time
+PROXY_CHUNK_SIZE = 512 * 1024
+
+
+def _parse_response(response: ExternalResponse, remote_url: str) -> StreamingHttpResponse:
+    """
+    Convert the Responses class from requests into the drf Response
+    """
+
+    def stream_response() -> Generator[bytes]:
+        yield from response.iter_content(PROXY_CHUNK_SIZE)
+
+    streamed_response = StreamingHttpResponse(
+        streaming_content=stream_response(),
+        status=response.status_code,
+        content_type=response.headers.pop("Content-Type", None),
+    )
+    # Add Headers to response
+    for header, value in response.headers.items():
+        if not is_hop_by_hop(header):
+            streamed_response[header] = value
+
+    streamed_response[PROXY_DIRECT_LOCATION_HEADER] = remote_url
+    return streamed_response
+
+
+def proxy_request(request: HttpRequest, org_id_or_slug: str, url_name: str) -> HttpResponseBase:
+    """Take a django request object and proxy it to a remote location given an org_id_or_slug"""
+
+    try:
+        cell = get_cell_for_organization(org_id_or_slug)
+    except CellResolutionError as e:
+        logger.info("region_resolution_error", extra={"org_slug": org_id_or_slug, "error": str(e)})
+        return HttpResponse(status=404)
+
+    return proxy_cell_request(request, cell, url_name)
+
+
+def proxy_error_embed_request(
+    request: HttpRequest, dsn: str, url_name: str
+) -> HttpResponseBase | None:
+    try:
+        parsed = urlparse(dsn)
+    except Exception as err:
+        logger.info("apigateway.error_embed.invalid_dsn", extra={"dsn": dsn, "error": err})
+        return None
+    host = parsed.netloc
+    app_host = urlparse(options.get("system.url-prefix")).netloc
+    if not host.endswith(app_host):
+        # Don't further parse URLs that aren't for us.
+        return None
+
+    app_segments = app_host.split(".")
+    host_segments = host.split(".")
+    if len(host_segments) - len(app_segments) < 3:
+        # If we don't have a o123.ingest.{region}.{app_host} style domain
+        # we forward to the monolith region
+        cell = get_cell_by_name(settings.SENTRY_MONOLITH_REGION)
+        return proxy_cell_request(request, cell, url_name)
+    try:
+        cell_offset = len(app_segments) + 1
+        cell_segment = host_segments[cell_offset * -1]
+        cell = get_cell_by_name(cell_segment)
+    except Exception:
+        return None
+
+    return proxy_cell_request(request, cell, url_name)
+
+
+def proxy_cell_request(request: HttpRequest, cell: Cell, url_name: str) -> StreamingHttpResponse:
+    """Take a django request object and proxy it to a cell silo"""
+    target_url = urljoin(cell.address, request.path)
+
+    content_encoding = request.headers.get("Content-Encoding")
+    header_dict = clean_proxy_headers(request.headers)
+    header_dict[PROXY_APIGATEWAY_HEADER] = "true"
+
+    # TODO: use requests session for connection pooling capabilities
+    assert request.method is not None
+    query_params = request.GET
+
+    timeout = ENDPOINT_TIMEOUT_OVERRIDE.get(url_name, settings.GATEWAY_PROXY_TIMEOUT)
+    metric_tags = {"region": cell.name, "url_name": url_name}
+
+    # XXX: See sentry.testutils.pytest.sentry for more information
+    if settings.APIGATEWAY_PROXY_SKIP_RELAY and request.path.startswith("/api/0/relays/"):
+        return StreamingHttpResponse(streaming_content="relay proxy skipped", status=404)
+
+    data: bytes | Generator[bytes] | ChunkedEncodingDecoder | BodyWithLength | None = None
+    if url_name == "sentry-api-0-organization-objectstore":
+        if content_encoding:
+            header_dict["Content-Encoding"] = content_encoding
+        data = get_raw_body(request)
+    else:
+        data = BodyWithLength(request)
+
+    try:
+        with metrics.timer("apigateway.proxy_request.duration", tags=metric_tags):
+            resp = external_request(
+                request.method,
+                url=target_url,
+                headers=header_dict,
+                params=dict(query_params) if query_params is not None else None,
+                data=data,
+                stream=True,
+                timeout=timeout,
+                # By default, external_request will resolve any redirects for any verb except for HEAD.
+                # We explicitly disable this behavior to avoid misrepresenting the original sentry.io request with the
+                # body response of the redirect.
+                allow_redirects=False,
+            )
+    except Timeout:
+        # remote silo timeout. Use DRF timeout instead
+        raise RequestTimeout()
+
+    new_headers = clean_outbound_headers(resp.headers)
+    resp.headers.clear()
+    resp.headers.update(new_headers)
+    return _parse_response(resp, target_url)
