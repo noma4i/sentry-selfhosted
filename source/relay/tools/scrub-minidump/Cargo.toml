@@ -1,0 +1,15 @@
+[package]
+name = "scrub-minidump"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Scrubs PII from a Minidump file"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "20.8.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+relay-pii = { workspace = true }
+serde_json = { workspace = true }

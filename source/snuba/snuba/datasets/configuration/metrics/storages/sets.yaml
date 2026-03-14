@@ -1,0 +1,61 @@
+version: v1
+kind: readable_storage
+name: metrics_sets
+storage:
+  key: metrics_sets
+  set_key: metrics
+readiness_state: complete
+schema:
+  columns:
+    [
+      { name: org_id, type: UInt, args: { size: 64 } },
+      { name: project_id, type: UInt, args: { size: 64 } },
+      { name: metric_id, type: UInt, args: { size: 64 } },
+      { name: granularity, type: UInt, args: { size: 32 } },
+      { name: timestamp, type: DateTime },
+      { name: retention_days, type: UInt, args: { size: 16 } },
+      {
+        name: tags,
+        type: Nested,
+        args:
+          {
+            subcolumns:
+              [
+                { name: key, type: UInt, args: { size: 64 } },
+                { name: value, type: UInt, args: { size: 64 } },
+              ],
+          },
+      },
+      {
+        name: _tags_hash,
+        type: Array,
+        args:
+          {
+            schema_modifiers: [readonly],
+            inner_type: { type: UInt, args: { size: 64 } },
+          },
+      },
+      {
+        name: value,
+        type: AggregateFunction,
+        args:
+          {
+            func: uniqCombined64,
+            arg_types: [{ type: UInt, args: { size: 64 } }],
+          },
+      },
+    ]
+  local_table_name: metrics_sets_v2_local
+  dist_table_name: metrics_sets_v2_dist
+allocation_policies:
+  - name: ReferrerGuardRailPolicy
+    args:
+      required_tenant_types:
+        - referrer
+      default_config_overrides:
+        is_enforced: 0
+        is_active: 0
+query_processors:
+  - processor: ArrayJoinKeyValueOptimizer
+    args:
+      column_name: tags

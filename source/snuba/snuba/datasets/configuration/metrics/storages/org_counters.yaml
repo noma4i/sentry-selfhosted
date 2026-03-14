@@ -1,0 +1,26 @@
+version: v1
+kind: readable_storage
+name: org_metrics_counters
+storage:
+  key: org_metrics_counters
+  set_key: metrics
+readiness_state: complete
+schema:
+  columns:
+    [
+      { name: org_id, type: UInt, args: { size: 64 } },
+      { name: project_id, type: UInt, args: { size: 64 } },
+      { name: metric_id, type: UInt, args: { size: 64 } },
+      { name: granularity, type: UInt, args: { size: 32 } },
+      { name: timestamp, type: DateTime },
+    ]
+  local_table_name: metrics_counters_v2_local
+  dist_table_name: metrics_counters_v2_dist
+allocation_policies:
+  - name: ReferrerGuardRailPolicy
+    args:
+      required_tenant_types:
+        - referrer
+      default_config_overrides:
+        is_enforced: 0
+        is_active: 0

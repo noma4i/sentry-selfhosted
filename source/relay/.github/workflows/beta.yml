@@ -1,0 +1,44 @@
+name: Beta CI
+
+on:
+  schedule:
+    - cron: "11 7 * * 1,4" # At 07:11 AM, only on Monday and Thursday
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RELAY_CARGO_ARGS: "--locked"
+
+jobs:
+  test-all:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [beta]
+
+    services:
+      redis: # https://docs.github.com/en/actions/guides/creating-redis-service-containers
+        image: redis
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Install libcurl-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev
+
+      - name: Install Rust Toolchain
+        run: |
+          rustup toolchain install ${{ matrix.rust }} --profile minimal --component clippy --no-self-update
+          rustup default ${{ matrix.rust }}
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features --no-deps -- -D warnings
+
+      - name: Run Cargo Tests
+        run: cargo test --workspace --all-features

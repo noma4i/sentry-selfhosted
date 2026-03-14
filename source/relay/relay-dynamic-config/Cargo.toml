@@ -1,0 +1,37 @@
+[package]
+name = "relay-dynamic-config"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Dynamic configuration passed down from sentry"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[features]
+default = []
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+relay-auth = { workspace = true }
+relay-base-schema = { workspace = true }
+relay-cardinality = { workspace = true }
+relay-common = { workspace = true }
+relay-event-normalization = { workspace = true }
+relay-filter = { workspace = true }
+relay-log = { workspace = true }
+relay-pattern = { workspace = true }
+relay-pii = { workspace = true }
+relay-protocol = { workspace = true }
+relay-quotas = { workspace = true }
+relay-sampling = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+similar-asserts = { workspace = true }

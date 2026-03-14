@@ -1,0 +1,404 @@
+from contextlib import closing
+import datetime
+import os
+import gzip
+import sqlite3
+import tempfile
+
+import pytest
+import signal
+import zlib
+from requests import HTTPError
+
+
+def test_graceful_shutdown_with_in_memory_buffer(mini_sentry, relay):
+    from time import sleep
+
+    get_project_config_original = mini_sentry.app.view_functions["get_project_config"]
+
+    @mini_sentry.app.endpoint("get_project_config")
+    def get_project_config():
+        sleep(1)  # Causes the process to wait for one second before shutting down
+        return get_project_config_original()
+
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+
+    relay = relay(
+        mini_sentry,
+        {"limits": {"shutdown_timeout": 2}},
+    )
+
+    relay.send_event(project_id)
+
+    relay.shutdown(sig=signal.SIGTERM)
+
+    # When using the memory envelope buffer, we optimistically do not do anything on shutdown, which means that the
+    # buffer will try and pop as always as long as it can (within the shutdown timeout).
+    event = mini_sentry.get_captured_envelope().get_event()
+    assert event["logentry"] == {"formatted": "Hello, World!"}
+
+
+def test_graceful_shutdown_with_sqlite_buffer(mini_sentry, relay):
+    import threading
+    from flask import request as flask_request
+    from time import sleep
+
+    # Create a temporary directory for the sqlite db.
+    with tempfile.TemporaryDirectory() as db_dir:
+        db_file_path = os.path.join(db_dir, "database.db")
+
+        project_config_requested = threading.Event()
+        get_project_config_original = mini_sentry.app.view_functions[
+            "get_project_config"
+        ]
+
+        @mini_sentry.app.endpoint("get_project_config")
+        def get_project_config():
+            # Delay only regular project config fetches to keep envelopes buffered while shutdown starts.
+            if flask_request.json.get("global") is not True:
+                project_config_requested.set()
+                sleep(1)
+            return get_project_config_original()
+
+        project_id = 42
+        mini_sentry.add_basic_project_config(project_id)
+
+        relay = relay(
+            mini_sentry,
+            {
+                "limits": {"shutdown_timeout": 2},
+                "spool": {"envelopes": {"path": db_file_path}},
+            },
+        )
+
+        n = 10
+        relay.send_event(project_id)
+        assert project_config_requested.wait(
+            timeout=2
+        ), "Relay did not request project config while event was buffered"
+        for _ in range(n - 1):
+            relay.send_event(project_id)
+
+        relay.shutdown(sig=signal.SIGTERM)
+
+        # When using the disk envelope buffer, we don't forward envelopes, but we spool them to disk.
+        assert mini_sentry.captured_envelopes.empty()
+
+        # Check if there's data in the SQLite table `envelopes`.
+        with closing(sqlite3.connect(db_file_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COALESCE(SUM(count), 0) FROM envelopes")
+            row_count = cursor.fetchone()[0]
+
+        assert (
+            row_count == n
+        ), f"The 'envelopes' table is empty. Expected {n} rows, but found {row_count}"
+
+
+def test_batch_size_bytes_asserted(mini_sentry, relay):
+    from time import sleep
+
+    # Create a temporary directory for the sqlite db.
+    db_file_path = os.path.join(tempfile.mkdtemp(), "database.db")
+
+    get_project_config_original = mini_sentry.app.view_functions["get_project_config"]
+
+    @mini_sentry.app.endpoint("get_project_config")
+    def get_project_config():
+        sleep(1)  # Causes the process to wait for one second before shutting down
+        return get_project_config_original()
+
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+
+    mini_sentry.fail_on_relay_error = False
+
+    relay = relay(
+        mini_sentry,
+        {
+            "limits": {"shutdown_timeout": 2},
+            # Arbitrarily chosen high value to always fail.
+            "spool": {"envelopes": {"path": db_file_path, "batch_size_bytes": "10tb"}},
+        },
+        wait_health_check=False,
+    )
+
+    # Assert that the process exited with an error (non-zero exit code)
+    assert relay.wait_for_exit() != 0, "Expected Relay to not start, but it started"
+
+
+@pytest.mark.skip("Flaky test")
+def test_forced_shutdown(mini_sentry, relay):
+    from time import sleep
+
+    get_project_config_original = mini_sentry.app.view_functions["get_project_config"]
+
+    @mini_sentry.app.endpoint("get_project_config")
+    def get_project_config():
+        sleep(2)  # Ensures the event is stuck in the queue when we send SIGINT
+        return get_project_config_original()
+
+    relay = relay(mini_sentry)
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+
+    try:
+        relay.send_event(project_id)
+        sleep(0.5)  # Give the event time to get stuck
+
+        relay.shutdown(sig=signal.SIGINT)
+        assert mini_sentry.captured_envelopes.empty()
+
+        failures = mini_sentry.current_test_failures()
+        assert failures
+
+        # we are expecting at least a dropped unfinished future error
+        dropped_unfinished_error_found = False
+        for route, error in failures:
+            assert route == "/api/666/envelope/"
+            if "Dropped unfinished future" in str(error):
+                dropped_unfinished_error_found = True
+        assert dropped_unfinished_error_found
+    finally:
+        mini_sentry.clear_test_failures()
+
+
+@pytest.mark.parametrize("trailing_slash", [True, False])
+@pytest.mark.parametrize(
+    "input",
+    [
+        '{"message": "im in ur query params"}',
+        "eF6rVspNLS5OTE9VslJQysxVyMxTKC1SKCxNLapUKEgsSswtVqoFAOKyDI4=",
+    ],
+)
+def test_store_pixel_gif(mini_sentry, relay, input, trailing_slash):
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+    relay = relay(mini_sentry)
+
+    response = relay.get(
+        "/api/%d/store/?sentry_data=%s&sentry_key=%s"
+        % (
+            project_id,
+            input,
+            mini_sentry.get_dsn_public_key(project_id),
+        )
+    )
+    response.raise_for_status()
+    assert response.headers["content-type"] == "image/gif"
+
+    event = mini_sentry.get_captured_envelope().get_event()
+    assert event["logentry"]["formatted"] == "im in ur query params"
+
+
+@pytest.mark.parametrize("route", ["/api/42/store/", "/api/42/store//"])
+def test_store_post_trailing_slash(mini_sentry, relay, route):
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+    relay = relay(mini_sentry)
+
+    response = relay.post(
+        "%s?sentry_key=%s"
+        % (
+            route,
+            mini_sentry.get_dsn_public_key(project_id),
+        ),
+        json={"message": "hi"},
+    )
+    response.raise_for_status()
+
+    event = mini_sentry.get_captured_envelope().get_event()
+    assert event["logentry"]["formatted"] == "hi"
+
+
+def id_fun1(param):
+    allowed, should_be_allowed = param
+    should_it = "" if should_be_allowed else "not"
+    return f"{str(allowed)} should {should_it} be allowed"
+
+
+@pytest.mark.parametrize(
+    "allowed_origins",
+    [
+        (["*"], True),
+        (["http://valid.com"], True),
+        (["http://*"], True),
+        (["valid.com"], True),
+        ([], False),
+        (["invalid.com"], False),
+    ],
+    ids=id_fun1,
+)
+def test_store_allowed_origins_passes(mini_sentry, relay, allowed_origins):
+    allowed_domains, should_be_allowed = allowed_origins
+    project_id = 42
+    config = mini_sentry.add_basic_project_config(project_id)
+    config["config"]["allowedDomains"] = allowed_domains
+
+    relay = relay(mini_sentry)
+
+    relay.post(
+        "/api/%d/store/?sentry_key=%s"
+        % (
+            project_id,
+            mini_sentry.get_dsn_public_key(project_id),
+        ),
+        headers={"Origin": "http://valid.com"},
+        json={"message": "hi"},
+    )
+
+    if should_be_allowed:
+        assert mini_sentry.get_captured_envelope().get_event() is not None
+    assert mini_sentry.captured_envelopes.empty()
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        "/api/42/store/",
+        "/api/42/envelope/",
+        "/api/42/attachment/",
+        "/api/42/minidump/",
+    ],
+)
+def test_zipbomb_content_encoding(mini_sentry, relay, route):
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+    mini_sentry.allow_chunked = True
+    relay = relay(
+        mini_sentry,
+        options={
+            "limits": {
+                "max_event_size": "20MB",
+                "max_attachment_size": "20MB",
+                "max_envelope_size": "20MB",
+                "max_api_payload_size": "20MB",
+            },
+        },
+    )
+    max_size = 20_000_000
+
+    path = f"{os.path.dirname(__file__)}/fixtures/10GB.gz"
+    size = os.path.getsize(path)
+    assert size < max_size
+
+    with open(path, "rb") as f:
+        response = relay.post(
+            "%s?sentry_key=%s"
+            % (
+                route,
+                mini_sentry.get_dsn_public_key(project_id),
+            ),
+            headers={
+                "content-encoding": "gzip",
+                "content-length": str(size),
+                "content-type": "application/octet-stream",
+            },
+            data=f,
+        )
+
+    assert response.status_code == 413
+
+
+@pytest.mark.parametrize("content_encoding", ["gzip", "deflate", "identity", ""])
+def test_compression(mini_sentry, relay, content_encoding):
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+    relay = relay(mini_sentry)
+
+    encodings = {
+        "deflate": zlib.compress,
+        "gzip": gzip.compress,
+        "identity": lambda x: x,
+        "": lambda x: x,
+    }
+
+    response = relay.post(
+        "/api/42/store/?sentry_key=%s" % mini_sentry.get_dsn_public_key(project_id),
+        headers={"content-encoding": content_encoding},
+        data=encodings[content_encoding](b'{"message": "hello world"}'),
+    )
+    response.raise_for_status()
+
+
+@pytest.mark.parametrize(
+    "cross_origin_resource_policy",
+    [
+        "cross-origin",
+    ],
+)
+def test_corp_response_header(mini_sentry, relay, cross_origin_resource_policy):
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+    relay = relay(mini_sentry)
+
+    response = relay.post(
+        f"/api/42/store/?sentry_key={mini_sentry.get_dsn_public_key(project_id)}",
+    )
+
+    assert (
+        response.headers["cross-origin-resource-policy"] == cross_origin_resource_policy
+    )
+
+
+def send_transaction_with_dsc(mini_sentry, relay, project_id, sampling_project_key):
+    relay = relay(mini_sentry)
+
+    now = datetime.datetime.now(datetime.UTC)
+    start_timestamp = (now - datetime.timedelta(minutes=1)).timestamp()
+    timestamp = now.timestamp()
+
+    relay.send_transaction(
+        project_id,
+        payload={
+            "type": "transaction",
+            "transaction": "foo",
+            "start_timestamp": start_timestamp,
+            "timestamp": timestamp,
+            "contexts": {
+                "trace": {
+                    "trace_id": "1234F60C11214EB38604F4AE0781BFB2",
+                    "span_id": "ABCDFDEAD5F74052",
+                    "type": "trace",
+                }
+            },
+        },
+        trace_info={
+            "public_key": sampling_project_key,
+            "trace_id": "1234F60C11214EB38604F4AE0781BFB2",
+            "release": "testapp@1.0",
+            "sample_rate": 0.5,
+        },
+    )
+
+    return mini_sentry.get_captured_envelope().get_transaction_event()
+
+
+def test_root_project_disabled(mini_sentry, relay):
+    project_id = 42
+    mini_sentry.add_full_project_config(project_id)
+    disabled_dsn = "00000000000000000000000000000000"
+    txn = send_transaction_with_dsc(mini_sentry, relay, project_id, disabled_dsn)
+    assert txn["contexts"]["trace"].get("client_sample_rate") == 0.5
+
+
+def test_root_project_same(mini_sentry, relay):
+    project_id = 42
+    mini_sentry.add_full_project_config(project_id)
+    same_dsn = mini_sentry.get_dsn_public_key(project_id)
+    txn = send_transaction_with_dsc(mini_sentry, relay, project_id, same_dsn)
+    assert txn["contexts"]["trace"]["client_sample_rate"] == 0.5
+
+
+def test_size_limit_status_code(mini_sentry, relay):
+    project_id = 42
+    mini_sentry.add_basic_project_config(project_id)
+    relay = relay(
+        mini_sentry,
+        {
+            "limits": {"max_event_size": "1B"},
+        },
+    )
+    with pytest.raises(HTTPError, match="413 Client Error"):
+        relay.send_event(project_id)

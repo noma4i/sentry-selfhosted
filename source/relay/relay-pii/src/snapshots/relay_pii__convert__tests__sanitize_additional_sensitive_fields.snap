@@ -1,0 +1,153 @@
+---
+source: relay-pii/src/convert.rs
+expression: data
+---
+{
+  "extra": {
+    "a_password_here": "[Filtered]",
+    "apiKey": "[Filtered]",
+    "api_key": "[Filtered]",
+    "fieldy_field": "[Filtered]",
+    "foo": "bar",
+    "moar_other_field": "[Filtered]",
+    "otp": "[Filtered]",
+    "password": "[Filtered]",
+    "the_secret": "[Filtered]",
+    "two-factor": "[Filtered]",
+    "two_factor": "[Filtered]"
+  },
+  "_meta": {
+    "extra": {
+      "a_password_here": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 5
+        }
+      },
+      "apiKey": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 10
+        }
+      },
+      "api_key": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 10
+        }
+      },
+      "fieldy_field": {
+        "": {
+          "rem": [
+            [
+              "strip-fields",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 5
+        }
+      },
+      "moar_other_field": {
+        "": {
+          "rem": [
+            [
+              "strip-fields",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 13
+        }
+      },
+      "otp": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 8
+        }
+      },
+      "password": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 5
+        }
+      },
+      "the_secret": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 5
+        }
+      },
+      "two-factor": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 8
+        }
+      },
+      "two_factor": {
+        "": {
+          "rem": [
+            [
+              "@password:filter",
+              "s",
+              0,
+              10
+            ]
+          ],
+          "len": 8
+        }
+      }
+    }
+  }
+}

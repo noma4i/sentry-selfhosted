@@ -1,0 +1,229 @@
+import sys
+from enum import IntEnum
+
+from sentry_relay._lowlevel import lib
+from sentry_relay.utils import decode_str, encode_str
+
+__all__ = [
+    "DataCategory",
+    "CategoryUnit",
+    "SPAN_STATUS_CODE_TO_NAME",
+    "SPAN_STATUS_NAME_TO_CODE",
+]
+
+
+class DataCategory(IntEnum):
+    # See _check_generated below.
+    # begin generated
+    DEFAULT = 0
+    ERROR = 1
+    TRANSACTION = 2
+    SECURITY = 3
+    ATTACHMENT = 4
+    SESSION = 5
+    PROFILE = 6
+    REPLAY = 7
+    TRANSACTION_PROCESSED = 8
+    TRANSACTION_INDEXED = 9
+    MONITOR = 10
+    PROFILE_INDEXED = 11
+    SPAN = 12
+    MONITOR_SEAT = 13
+    USER_REPORT_V2 = 14
+    METRIC_BUCKET = 15
+    SPAN_INDEXED = 16
+    PROFILE_DURATION = 17
+    PROFILE_CHUNK = 18
+    METRIC_SECOND = 19
+    DO_NOT_USE_REPLAY_VIDEO = 20
+    UPTIME = 21
+    ATTACHMENT_ITEM = 22
+    LOG_ITEM = 23
+    LOG_BYTE = 24
+    PROFILE_DURATION_UI = 25
+    PROFILE_CHUNK_UI = 26
+    SEER_AUTOFIX = 27
+    SEER_SCANNER = 28
+    PREVENT_USER = 29
+    PREVENT_REVIEW = 30
+    SIZE_ANALYSIS = 31
+    INSTALLABLE_BUILD = 32
+    TRACE_METRIC = 33
+    SEER_USER = 34
+    PROFILE_BACKEND = 35
+    PROFILE_UI = 36
+    TRACE_METRIC_BYTE = 37
+    UNKNOWN = -1
+    # end generated
+
+    @classmethod
+    def parse(cls, name):
+        """
+        Parses a `DataCategory` from its API name.
+        """
+        category = DataCategory(lib.relay_data_category_parse(encode_str(name or "")))
+        if category == DataCategory.UNKNOWN:
+            return None  # Unknown is a Rust-only value, replace with None
+        return category
+
+    @classmethod
+    def from_event_type(cls, event_type):
+        """
+        Parses a `DataCategory` from an event type.
+        """
+        s = encode_str(event_type or "")
+        return DataCategory(lib.relay_data_category_from_event_type(s))
+
+    @classmethod
+    def event_categories(cls):
+        """
+        Returns categories that count as events, including transactions.
+        """
+        return [
+            DataCategory.DEFAULT,
+            DataCategory.ERROR,
+            DataCategory.TRANSACTION,
+            DataCategory.SECURITY,
+            DataCategory.USER_REPORT_V2,
+        ]
+
+    @classmethod
+    def error_categories(cls):
+        """
+        Returns categories that count as traditional error tracking events.
+        """
+        return [DataCategory.DEFAULT, DataCategory.ERROR, DataCategory.SECURITY]
+
+    def api_name(self):
+        """
+        Returns the API name of the given `DataCategory`.
+        """
+        return decode_str(lib.relay_data_category_name(self.value), free=True)
+
+
+def _check_generated():
+    prefix = "RELAY_DATA_CATEGORY_"
+
+    attrs = {}
+    for attr in dir(lib):
+        if attr.startswith(prefix):
+            category_name = attr[len(prefix) :]
+            attrs[category_name] = getattr(lib, attr)
+
+    if attrs != DataCategory.__members__:
+        values = sorted(
+            attrs.items(), key=lambda kv: sys.maxsize if kv[1] == -1 else kv[1]
+        )
+        generated = "".join(f"    {k} = {v}\n" for k, v in values)
+        raise AssertionError(
+            f"DataCategory enum does not match source!\n\n"
+            f"Paste this into `class DataCategory` in py/sentry_relay/consts.py:\n\n"
+            f"{generated}"
+        )
+
+
+_check_generated()
+
+
+class CategoryUnit(IntEnum):
+    """
+    The unit in which a data category is measured.
+
+    This enum specifies how quantities for different data categories are measured,
+    which affects how quota limits are interpreted and enforced.
+
+    Note: There is no UNKNOWN member. Methods return None for categories without
+    a defined unit (e.g., DataCategory.UNKNOWN).
+    """
+
+    # See _check_category_unit_generated below.
+    # begin generated
+    COUNT = 0
+    BYTES = 1
+    MILLISECONDS = 2
+    # end generated
+
+    @classmethod
+    def parse(cls, name):
+        """
+        Parses a `CategoryUnit` from its API name.
+
+        Returns the CategoryUnit, or None for unknown/invalid names.
+        """
+        result = lib.relay_category_unit_parse(encode_str(name or ""))
+        if result == -1:
+            return None
+        return CategoryUnit(result)
+
+    @classmethod
+    def from_category(cls, category):
+        """
+        Returns the `CategoryUnit` for a given `DataCategory`.
+
+        Args:
+            category: Either a DataCategory enum value or its integer value.
+
+        Returns:
+            The CategoryUnit for the given category, or None if the category
+            has no defined unit (e.g., DataCategory.UNKNOWN).
+        """
+        if isinstance(category, DataCategory):
+            category = category.value
+        result = lib.relay_data_category_unit(category)
+        if result == -1:
+            return None
+        return CategoryUnit(result)
+
+    def api_name(self):
+        """
+        Returns the API name of the given `CategoryUnit`.
+        """
+        return decode_str(lib.relay_category_unit_name(self.value), free=True)
+
+
+def _check_category_unit_generated():
+    """Validates that the Python CategoryUnit enum matches the C constants."""
+    prefix = "RELAY_CATEGORY_UNIT_"
+
+    attrs = {}
+    for attr in dir(lib):
+        if attr.startswith(prefix):
+            unit_name = attr[len(prefix) :]
+            attrs[unit_name] = getattr(lib, attr)
+
+    if attrs != CategoryUnit.__members__:
+        values = sorted(attrs.items(), key=lambda kv: kv[1])
+        generated = "".join(f"    {k} = {v}\n" for k, v in values)
+        raise AssertionError(
+            f"CategoryUnit enum does not match source!\n\n"
+            f"Paste this into `class CategoryUnit` in py/sentry_relay/consts.py:\n\n"
+            f"{generated}"
+        )
+
+
+_check_category_unit_generated()
+
+SPAN_STATUS_CODE_TO_NAME = {}
+SPAN_STATUS_NAME_TO_CODE = {}
+
+
+def _make_span_statuses():
+    prefix = "RELAY_SPAN_STATUS_"
+
+    for attr in dir(lib):
+        if not attr.startswith(prefix):
+            continue
+
+        status_name = attr[len(prefix) :].lower()
+        status_code = getattr(lib, attr)
+
+        SPAN_STATUS_CODE_TO_NAME[status_code] = status_name
+        SPAN_STATUS_NAME_TO_CODE[status_name] = status_code
+
+    # Legacy alias
+    SPAN_STATUS_NAME_TO_CODE["unknown_error"] = SPAN_STATUS_NAME_TO_CODE[
+        "internal_error"
+    ]
+
+
+_make_span_statuses()

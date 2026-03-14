@@ -1,0 +1,39 @@
+[package]
+name = "relay-quotas"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Sentry quotas and rate limiting"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[features]
+default = []
+redis = ["dep:thiserror", "dep:relay-log", "relay-redis/impl"]
+
+[lints]
+workspace = true
+
+[dependencies]
+ahash = { workspace = true }
+async-trait = { workspace = true }
+hashbrown = { workspace = true }
+papaya = { workspace = true }
+itertools = { workspace = true }
+relay-base-schema = { workspace = true }
+relay-common = { workspace = true }
+relay-log = { workspace = true, optional = true }
+relay-redis = { workspace = true, optional = true }
+relay-statsd = { workspace = true }
+serde = { workspace = true }
+smallvec = { workspace = true }
+thiserror = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+insta = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }

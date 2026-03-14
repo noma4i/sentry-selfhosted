@@ -1,0 +1,77 @@
+#[cfg(test)]
+use relay_event_schema::protocol::Event;
+#[cfg(test)]
+use relay_protocol::Annotated;
+use relay_quotas::DataCategory;
+
+use crate::Envelope;
+use crate::managed::{Managed, ManagedResult, Rejected};
+#[cfg(feature = "processing")]
+use crate::processing::StoreHandle;
+use crate::processing::spans::Indexed;
+use crate::processing::transactions::types::{ExpandedTransaction, StandaloneProfile};
+use crate::processing::{Forward, ForwardContext};
+use crate::services::outcome::{DiscardReason, Outcome};
+
+/// Output of the transaction processor.
+#[derive(Debug)]
+pub enum TransactionOutput {
+    /// The transaction has not been dropped by dynamic sampling.
+    Full(Managed<Box<ExpandedTransaction>>),
+    /// The transaction has been dropped by dynamic sampling, only an optional profile remains.
+    Profile(Managed<Box<StandaloneProfile>>),
+    /// The transaction has not been dropped by dynamic sampling, and metrics have been extracted.
+    ///
+    /// This is used in processing relays.
+    Indexed(Managed<Box<ExpandedTransaction<Indexed>>>),
+}
+
+impl TransactionOutput {
+    #[cfg(test)]
+    pub fn event(self) -> Option<Annotated<Event>> {
+        match self {
+            TransactionOutput::Full(managed) => Some(managed.accept(|x| x).event),
+            TransactionOutput::Profile(_) => None,
+            TransactionOutput::Indexed(managed) => Some(managed.accept(|x| x).event),
+        }
+    }
+}
+
+impl Forward for TransactionOutput {
+    fn serialize_envelope(
+        self,
+        _ctx: ForwardContext<'_>,
+    ) -> Result<Managed<Box<Envelope>>, Rejected<()>> {
+        match self {
+            TransactionOutput::Full(managed) => managed.try_map(|work, _| {
+                work.serialize_envelope()
+                    .map_err(drop)
+                    .with_outcome(Outcome::Invalid(DiscardReason::Internal))
+            }),
+            TransactionOutput::Profile(profile) => {
+                Ok(profile.map(|profile, _| profile.serialize_envelope()))
+            }
+            TransactionOutput::Indexed(managed) => managed.try_map(|work, record_keeper| {
+                // TODO: This should raise an error, Indexed output should go straight to Kafka
+                // instead of an envelope. As long as we have this hack, ignore bookkeeping
+                record_keeper.lenient(DataCategory::Transaction);
+                record_keeper.lenient(DataCategory::Span);
+
+                work.serialize_envelope()
+                    .map_err(drop)
+                    .with_outcome(Outcome::Invalid(DiscardReason::Internal))
+            }),
+        }
+    }
+
+    #[cfg(feature = "processing")]
+    fn forward_store(
+        self,
+        s: StoreHandle<'_>,
+        ctx: ForwardContext<'_>,
+    ) -> Result<(), Rejected<()>> {
+        let envelope = self.serialize_envelope(ctx)?;
+        s.send_envelope(crate::managed::ManagedEnvelope::from(envelope));
+        Ok(())
+    }
+}

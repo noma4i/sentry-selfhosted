@@ -1,0 +1,36 @@
+[package]
+name = "relay-redis"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Pooled Redis and Redis cluster abstraction for Relay"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+deadpool = { workspace = true, optional = true, features = ["rt_tokio_1"] }
+futures = { workspace = true }
+redis = { workspace = true, optional = true, features = [
+    "cluster",
+    "r2d2",
+    "tls-native-tls",
+    "script",
+    "tokio-native-tls-comp",
+    "cluster-async",
+    "connection-manager"
+], default-features = false }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+thiserror = { workspace = true }
+
+relay-statsd = { workspace = true, optional = true }
+relay-system = { workspace = true }
+
+[features]
+default = []
+impl = ["dep:deadpool", "dep:relay-statsd", "dep:redis"]

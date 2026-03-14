@@ -1,0 +1,24 @@
+[package]
+name = "relay-monitors"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Monitors processing for Relay"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+relay-base-schema = { workspace = true }
+relay-event-schema = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v5"] }
+
+[dev-dependencies]
+similar-asserts = { workspace = true }

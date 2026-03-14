@@ -1,0 +1,20 @@
+[package]
+name = "document-metrics"
+version = "0.1.0"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Generates documentation for metrics"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+syn = { workspace = true, features = ["full"] }
+
+[dev-dependencies]
+insta = { workspace = true }

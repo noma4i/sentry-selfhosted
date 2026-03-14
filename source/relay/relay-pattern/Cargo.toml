@@ -1,0 +1,29 @@
+[package]
+name = "relay-pattern"
+authors = ["Sentry <oss@sentry.io>"]
+description = "A glob like pattern used throughout Relay"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
+
+[dependencies]
+memchr = { workspace = true }
+serde = { workspace = true, optional = true}
+
+[dev-dependencies]
+criterion = { workspace = true }
+serde_json = { workspace = true }
+
+[[bench]]
+name = "benches"
+harness = false

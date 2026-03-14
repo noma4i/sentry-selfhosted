@@ -1,0 +1,211 @@
+"""
+Test the health check endpoints
+"""
+
+import queue
+import time
+import tempfile
+import os
+import subprocess
+import pytest
+
+from requests import HTTPError, ConnectionError
+
+
+def failing_check_challenge(*args, **kwargs):
+    return "fail", 400
+
+
+def wait_get(server, path, **kwargs):
+    """Waits until the server listens to requests and returns the response."""
+    backoff = 0.1
+    while True:
+        try:
+            return server.get(path, **kwargs)
+        except Exception:
+            time.sleep(backoff)
+            if backoff > 2:
+                raise
+            backoff *= 2
+
+
+def cli_healthcheck(relay_binary, relay, mode):
+    result = subprocess.run(
+        relay_binary + ["-c", relay.config_dir, "healthcheck", "--mode", mode]
+    )
+    return result.returncode == 0
+
+
+def http_healthcheck(_, relay, mode):
+    try:
+        response = relay.get(f"/api/relay/healthcheck/{mode}/", is_internal=True)
+    except ConnectionError:
+        return False
+    else:
+        return response.status_code == 200
+
+
+@pytest.mark.parametrize("port", [None, "random"])
+@pytest.mark.parametrize("check", [cli_healthcheck, http_healthcheck])
+def test_live(mini_sentry, relay, get_relay_binary, random_port, port, check):
+    """Internal endpoint used by Kubernetes"""
+    options = None
+    if port == "random":
+        options = {"relay": {"internal_port": random_port()}}
+    relay = relay(mini_sentry, options=options)
+    assert check(get_relay_binary(), relay, "live")
+
+
+def test_external_live(mini_sentry, relay):
+    """Endpoint called by a downstream to see if it has network connection to the upstream."""
+    relay = relay(mini_sentry)
+    response = relay.get("/api/0/relays/live/")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("port", [None, "random"])
+@pytest.mark.parametrize("check", [cli_healthcheck, http_healthcheck])
+def test_readiness(mini_sentry, relay, get_relay_binary, random_port, port, check):
+    """Internal endpoint used by Kubernetes"""
+    original_check_challenge = mini_sentry.app.view_functions["check_challenge"]
+    mini_sentry.app.view_functions["check_challenge"] = failing_check_challenge
+
+    options = None
+    if port == "random":
+        options = {"relay": {"internal_port": random_port()}}
+
+    try:
+        relay = relay(mini_sentry, wait_health_check=False, options=options)
+        assert not check(get_relay_binary(), relay, "ready")
+
+        mini_sentry.app.view_functions["check_challenge"] = original_check_challenge
+        relay.wait_health_check()
+    finally:
+        mini_sentry.clear_test_failures()
+
+    assert check(get_relay_binary(), relay, "ready")
+
+
+def test_readiness_flag(mini_sentry, relay):
+    mini_sentry.app.view_functions["check_challenge"] = failing_check_challenge
+
+    try:
+        relay = relay(
+            mini_sentry, {"auth": {"ready": "always"}}, wait_health_check=False
+        )
+        response = wait_get(relay, "/api/relay/healthcheck/ready/", is_internal=True)
+        assert response.status_code == 200
+    finally:
+        mini_sentry.clear_test_failures()
+
+
+def test_readiness_proxy(mini_sentry, relay):
+    mini_sentry.app.view_functions["check_challenge"] = failing_check_challenge
+
+    relay = relay(mini_sentry, {"relay": {"mode": "proxy"}}, wait_health_check=False)
+    response = wait_get(relay, "/api/relay/healthcheck/ready/", is_internal=True)
+    assert response.status_code == 200
+
+
+def assert_not_enough_memory(relay, mini_sentry, expected_comparison):
+    response = wait_get(relay, "/api/relay/healthcheck/ready/", is_internal=True)
+    assert response.status_code == 503
+    errors = ""
+    for _ in range(100):
+        try:
+            errors += f"{mini_sentry.test_failures.get(timeout=10)}\n"
+        except queue.Empty:
+            break
+        if (
+            "Not enough memory" in errors
+            and expected_comparison in errors
+            and "Health check probe 'system memory'" in errors
+            and "Health check probe 'spool health'" in errors
+        ):
+            return
+
+    assert False, f"Not all errors represented: {errors}"
+
+
+def test_readiness_not_enough_memory_bytes(mini_sentry, relay):
+    relay = relay(
+        mini_sentry,
+        {"relay": {"mode": "proxy"}, "health": {"max_memory_bytes": 42}},
+        wait_health_check=False,
+    )
+
+    assert_not_enough_memory(relay, mini_sentry, ">= 42")
+
+
+def test_readiness_not_enough_memory_percent(mini_sentry, relay):
+    relay = relay(
+        mini_sentry,
+        {"relay": {"mode": "proxy"}, "health": {"max_memory_percent": 0.01}},
+        wait_health_check=False,
+    )
+
+    assert_not_enough_memory(relay, mini_sentry, ">= 1.00%")
+
+
+def test_readiness_depends_on_aggregator_being_full_after_metrics(mini_sentry, relay):
+    relay = relay(
+        mini_sentry,
+        {"aggregator": {"max_total_bucket_bytes": 1, "initial_delay": 30}},
+    )
+
+    metrics_payload = "transactions/foo:42|c\ntransactions/bar:17|c"
+    relay.send_metrics(42, metrics_payload)
+
+    for _ in range(100):
+        response = wait_get(relay, "/api/relay/healthcheck/ready/", is_internal=True)
+        if response.status_code == 503:
+            error = str(mini_sentry.test_failures.get(timeout=1))
+            assert "aggregator limit exceeded" in error
+            error = str(mini_sentry.test_failures.get(timeout=1))
+            assert "Health check probe 'aggregator'" in error
+            return
+        time.sleep(0.2)
+
+    assert False, "health check never failed"
+
+
+def test_readiness_disk_spool(mini_sentry, relay):
+    mini_sentry.fail_on_relay_error = False
+    temp = tempfile.mkdtemp()
+    dbfile = os.path.join(temp, "buffer.db")
+
+    project_key = 42
+    mini_sentry.add_full_project_config(project_key)
+    # Set the broken config, so we won't be able to dequeue the envelopes.
+    config = mini_sentry.project_configs[project_key]["config"]
+    config["quotas"] = None
+
+    relay_config = {
+        "health": {
+            "refresh_interval_ms": 100,
+        },
+        "spool": {
+            # if the config contains max_disk_size and max_memory_size set both to 0, Relay will never passes readiness check
+            "envelopes": {
+                "path": dbfile,
+                "max_disk_size": 24577,  # one more than the initial size
+                "batch_size_bytes": 1,
+            }
+        },
+    }
+
+    relay = relay(mini_sentry, relay_config)
+
+    # Second sent event can trigger error on the relay size, since the spool is full now.
+    for _ in range(20):
+        # It takes ~10 events to make SQLite use more pages.
+        try:
+            relay.send_event(project_key)
+        except HTTPError as e:
+            # Might already reject responses
+            assert e.response.status_code == 503
+
+    time.sleep(2.0)
+
+    response = wait_get(relay, "/api/relay/healthcheck/ready/", is_internal=True)
+    assert response.status_code == 503

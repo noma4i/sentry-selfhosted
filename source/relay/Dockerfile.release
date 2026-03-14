@@ -1,0 +1,21 @@
+FROM gcr.io/distroless/cc-debian12:debug AS builder
+
+RUN ["/busybox/busybox", "mkdir", "/work", "/etc/relay"]
+
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+
+ARG TARGETPLATFORM
+
+EXPOSE 3000
+
+COPY --from=builder --chown=nonroot:nonroot /etc/relay /etc/relay
+COPY --from=builder --chown=nonroot:nonroot /work /work
+
+VOLUME ["/etc/relay", "/work"]
+WORKDIR /work
+
+COPY --chmod=755 $TARGETPLATFORM/relay /bin/relay
+
+ENTRYPOINT ["/bin/relay"]
+CMD ["run"]

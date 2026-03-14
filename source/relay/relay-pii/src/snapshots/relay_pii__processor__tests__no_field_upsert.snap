@@ -1,0 +1,19 @@
+---
+source: relay-pii/src/processor.rs
+expression: event
+---
+{
+  "extra": null,
+  "_meta": {
+    "extra": {
+      "": {
+        "rem": [
+          [
+            "@anything:remove",
+            "x"
+          ]
+        ]
+      }
+    }
+  }
+}

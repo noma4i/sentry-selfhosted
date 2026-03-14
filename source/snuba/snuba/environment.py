@@ -1,0 +1,132 @@
+from __future__ import absolute_import
+
+import logging
+import os
+from typing import Optional
+
+import sentry_sdk
+import structlog
+from sentry_sdk.integrations.flask import FlaskIntegration
+from sentry_sdk.integrations.gnu_backtrace import GnuBacktraceIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.redis import RedisIntegration
+from sentry_sdk.integrations.threading import ThreadingIntegration
+from sentry_sdk.types import Event, Hint
+from structlog.processors import JSONRenderer
+from structlog.types import EventDict
+from structlog_sentry import SentryProcessor
+
+from snuba import settings
+from snuba.utils.metrics.util import create_metrics
+
+
+def add_severity_attribute(
+    logger: logging.Logger, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """
+    Set the severity attribute for Google Cloud logging ingestion
+    """
+    if method_name == "warn":
+        method_name = "warning"
+
+    event_dict["severity"] = method_name
+    event_dict["level"] = method_name
+
+    return event_dict
+
+
+def drop_level(logger: logging.Logger, method_name: str, event_dict: EventDict) -> EventDict:
+    """
+    The "SentryProcessor" requires a `level` field but we're already
+    emitting it as `severity` for Google Cloud, so we delete the duplication
+    if SentryProcessor is done
+    """
+    del event_dict["level"]
+
+    return event_dict
+
+
+def setup_logging(level: Optional[str] = None) -> None:
+    if level is None:
+        level = settings.LOG_LEVEL
+
+    logging.basicConfig(
+        level=getattr(logging, level.upper()),
+        format=settings.LOG_FORMAT,
+        force=True,
+    )
+
+    structlog.configure(
+        cache_logger_on_first_use=True,
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        processors=[
+            add_severity_attribute,
+            structlog.contextvars.merge_contextvars,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            SentryProcessor(),
+            drop_level,
+            JSONRenderer(),
+        ],
+    )
+
+
+def before_send(event: Event, hint: Hint) -> Event | None:
+    """Filter out AllocationPolicyViolations and RPCAllocationPolicyException from being sent to Sentry"""
+    if "exc_info" in hint:
+        _, exc_value, _ = hint["exc_info"]
+        # Check if it's an AllocationPolicyViolations in the cause chain
+        if exc_value is not None:
+            from snuba.web.rpc.common.exceptions import RPCAllocationPolicyException
+
+            if isinstance(exc_value, RPCAllocationPolicyException):
+                return None  # Don't send to Sentry
+
+            cause = getattr(exc_value, "__cause__", None)
+            from snuba.query.allocation_policies import AllocationPolicyViolations
+
+            if isinstance(cause, AllocationPolicyViolations):
+                return None  # Don't send to Sentry
+    return event
+
+
+def setup_sentry() -> None:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        spotlight=None if settings.DEBUG else False,
+        before_send=before_send,
+        integrations=[
+            FlaskIntegration(),
+            GnuBacktraceIntegration(),
+            LoggingIntegration(event_level=logging.WARNING),
+            RedisIntegration(),
+            ThreadingIntegration(propagate_hub=True),
+        ],
+        # the value for release is also computed in rust-snuba, please keep the
+        # logic in sync
+        release=os.getenv("SNUBA_RELEASE"),
+        traces_sample_rate=settings.SENTRY_TRACE_SAMPLE_RATE,
+        profiles_sample_rate=settings.SNUBA_PROFILES_SAMPLE_RATE,
+        _experiments={
+            # Turns on the metrics module
+            "enable_metrics": True,
+            # Enables sending of code locations for metrics
+            "metric_code_locations": True,
+        },
+    )
+
+    from snuba.utils.profiler import run_ondemand_profiler
+
+    if settings.SENTRY_DSN is not None:
+        # Do not run ondemand profiler in tests, it interferes with mocked
+        # `time.sleep()` and assertions on that mock.
+        run_ondemand_profiler()
+
+
+metrics = create_metrics(
+    "snuba",
+    tags=None,
+    sample_rates=settings.DOGSTATSD_SAMPLING_RATES,
+)

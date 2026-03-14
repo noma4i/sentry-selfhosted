@@ -1,0 +1,11 @@
+---
+source: relay-pii/src/processor.rs
+expression: breadcrumb
+---
+{
+  "data": {
+    "http": {
+      "query": "dance=true"
+    }
+  }
+}

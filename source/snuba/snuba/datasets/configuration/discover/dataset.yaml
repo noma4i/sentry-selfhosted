@@ -1,0 +1,8 @@
+version: v1
+kind: dataset
+name: discover
+
+entities:
+  - discover
+  - discover_events
+  - discover_transactions

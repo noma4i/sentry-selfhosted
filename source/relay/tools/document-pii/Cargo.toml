@@ -1,0 +1,23 @@
+[package]
+name = "document-pii"
+version = "0.1.0"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Generates documentation for which fields are datascrubbed"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+path-slash = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+syn = { workspace = true, features = ["visit", "full", "extra-traits"] }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

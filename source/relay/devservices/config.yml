@@ -1,0 +1,60 @@
+# Ignored by docker compose, used by devservices
+x-sentry-service-config:
+  version: 0.1
+  service_name: relay
+  dependencies:
+    redis:
+      description: Shared instance of redis used by sentry services
+      remote:
+        repo_name: sentry-shared-redis
+        branch: main
+        repo_link: https://github.com/getsentry/sentry-shared-redis.git
+    kafka:
+      description: Shared instance of kafka used by sentry services
+      remote:
+        repo_name: sentry-shared-kafka
+        branch: main
+        repo_link: https://github.com/getsentry/sentry-shared-kafka.git
+    objectstore:
+      description: Storage for files and blobs
+      remote:
+        repo_name: objectstore
+        branch: main
+        repo_link: https://github.com/getsentry/objectstore.git
+        mode: containerized
+    relay:
+      description: Service that pushes some functionality from the Sentry SDKs as well as the Sentry server into a proxy process.
+  modes:
+    default: [redis, kafka, objectstore]
+    containerized: [redis, kafka, objectstore, relay]
+
+x-programs:
+  devserver:
+    command: cargo run
+
+services:
+  relay:
+    image: ghcr.io/getsentry/relay:nightly
+    ports:
+      - 127.0.0.1:7899:7899
+    command: [run, --config, /etc/relay]
+    healthcheck:
+      test: ["CMD", "/bin/relay", "--config", "/etc/relay", "healthcheck", "--mode", "live"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - ./config/relay.yml:/etc/relay/config.yml
+      - ./config/devservices-credentials.json:/etc/relay/credentials.json
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - devservices
+    labels:
+      - orchestrator=devservices
+    restart: unless-stopped
+
+networks:
+  devservices:
+    name: devservices
+    external: true

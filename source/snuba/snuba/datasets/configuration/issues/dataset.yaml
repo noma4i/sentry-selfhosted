@@ -1,0 +1,6 @@
+version: v1
+kind: dataset
+name: search_issues
+
+entities:
+  - search_issues

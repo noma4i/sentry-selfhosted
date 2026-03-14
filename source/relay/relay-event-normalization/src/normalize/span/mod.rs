@@ -1,0 +1,23 @@
+//! Span normalization logic.
+
+use regex::Regex;
+use std::sync::LazyLock;
+
+pub mod ai;
+pub mod country_subregion;
+pub mod description;
+pub mod exclusive_time;
+pub mod reparent_broken_spans;
+pub mod tag_extraction;
+
+/// Regex used to scrub hex IDs and multi-digit numbers from table names and other identifiers.
+pub static TABLE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?ix)
+        [0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12} |
+        [0-9a-f]{8,} |
+        \d\d+
+        ",
+    )
+    .unwrap()
+});

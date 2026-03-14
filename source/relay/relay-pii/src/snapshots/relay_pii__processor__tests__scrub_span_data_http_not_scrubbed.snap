@@ -1,0 +1,11 @@
+---
+source: relay-pii/src/processor.rs
+expression: span
+---
+{
+  "data": {
+    "http": {
+      "query": "dance=true"
+    }
+  }
+}

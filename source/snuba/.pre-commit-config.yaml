@@ -1,0 +1,64 @@
+exclude: >
+    (?x)(
+        ^snuba/admin/dist/|
+        ^snuba/admin/static/|
+        ^snuba/protobufs/
+    )
+
+repos:
+  - repo: local
+    hooks:
+      # Configuration for ruff exists in pyproject.toml.
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-lint
+        name: ruff lint
+        entry: ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
+        require_serial: true
+
+      - id: validate-configs-syntax
+        name: validate-configs-syntax
+        entry: env SNUBA_SETTINGS=test python3 -m snuba.validate_configs
+        language: python
+        additional_dependencies: [ 'fastjsonschema', 'pyyaml', 'sentry_sdk' ]
+        pass_filenames: false
+        files: 'snuba/datasets/configuration/.*'
+      - id: cargo-fmt
+        name: format rust code
+        language: system
+        # keep in sync with Cargo.toml. There is no way to run cargo fmt for specific files
+        # https://github.com/rust-lang/rustfmt/issues/4485
+        entry: rustfmt --edition 2021
+        files: ^rust_snuba/.*\.rs$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-xml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: fix-encoding-pragma
+        args: ["--remove"]
+      - id: no-commit-to-branch
+        args: ['--branch', 'master']
+      - id: check-added-large-files
+        args: ['--maxkb=1024']

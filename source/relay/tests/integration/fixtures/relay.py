@@ -1,0 +1,266 @@
+import json
+import os
+from queue import Queue
+import sys
+import uuid
+import signal
+import stat
+import requests
+import subprocess
+from collections import defaultdict
+
+import yaml
+import pytest
+
+from sentry_relay.auth import generate_key_pair
+from . import SentryLike
+
+RELAY_BIN = [os.path.abspath(os.environ.get("RELAY_BIN") or "target/debug/relay")]
+
+if os.environ.get("RELAY_AS_CARGO", "false") == "true":
+    RELAY_BIN = ["cargo", "run", "--"]
+
+
+class Relay(SentryLike):
+    def __init__(
+        self,
+        server_address,
+        process,
+        upstream,
+        public_key,
+        secret_key,
+        relay_id,
+        config_dir,
+        options,
+        version,
+    ):
+        super().__init__(
+            server_address,
+            upstream,
+            public_key,
+            internal_server_address=get_internal_address(options, server_address),
+        )
+
+        self.process = process
+        self.relay_id = relay_id
+        self.secret_key = secret_key
+        self.config_dir = config_dir
+        self.options = options
+        self.version = version
+
+        self._health_check_passed = defaultdict(lambda: False)
+
+    def wait_for_exit(self, timeout=5):
+        try:
+            return self.process.wait(timeout)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            raise
+
+    def wait_health_check(self, mode="ready"):
+        if self._health_check_passed[mode]:
+            return
+
+        self._wait(f"/api/relay/healthcheck/{mode}/", is_internal=True)
+        self._health_check_passed[mode] = True
+
+    def shutdown(self, sig=signal.SIGKILL):
+        self.process.send_signal(sig)
+
+        try:
+            self.process.wait(19)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            raise
+
+    def send_signal(self, signal):
+        self.process.send_signal(signal)
+
+
+@pytest.fixture
+def get_relay_binary():
+    def inner(version="latest"):
+        if version == "latest":
+            return RELAY_BIN
+
+        if sys.platform == "linux" or sys.platform == "linux2":
+            filename = "relay-Linux-x86_64"
+        elif sys.platform == "darwin":
+            filename = "relay-Darwin-x86_64"
+        elif sys.platform == "win32":
+            filename = "relay-Windows-x86_64.exe"
+
+        download_path = f"target/relay_releases_cache/{filename}_{version}"
+
+        if not os.path.exists(download_path):
+            download_url = (
+                f"https://github.com/getsentry/relay/releases/download/"
+                f"{version}/{filename}"
+            )
+
+            headers = {}
+            if "GITHUB_TOKEN" in os.environ:
+                headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
+
+            os.makedirs(os.path.dirname(download_path), exist_ok=True)
+
+            with requests.get(download_url, headers=headers) as r:
+                r.raise_for_status()
+
+                with open(download_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+        os.chmod(download_path, 0o700 | stat.S_IEXEC)
+
+        return [download_path]
+
+    return inner
+
+
+@pytest.fixture
+def relay_credentials():
+    def inner():
+        sk, pk = generate_key_pair()
+        return {"public_key": str(pk), "secret_key": str(sk), "id": str(uuid.uuid4())}
+
+    return inner
+
+
+@pytest.fixture
+def relay(mini_sentry, random_port, background_process, config_dir, get_relay_binary):
+    def inner(
+        upstream,
+        options=None,
+        prepare=None,
+        external=None,
+        wait_health_check="ready",
+        static_relays=None,
+        static_credentials=None,
+        credentials=None,
+        version="latest",
+    ):
+        relay_bin = get_relay_binary(version)
+        host = "127.0.0.1"
+        port = random_port()
+
+        default_opts = {
+            "relay": {
+                "upstream": upstream.url,
+                "host": host,
+                "port": port,
+                "tls_port": None,
+                "tls_private_key": None,
+                "tls_cert": None,
+            },
+            "sentry": {"dsn": mini_sentry.internal_error_dsn, "enabled": True},
+            "limits": {"max_api_file_upload_size": "1MiB"},
+            "cache": {"batch_interval": 0},
+            "logging": {"level": "trace"},
+            "http": {"timeout": 2},
+            "processing": {"enabled": False, "kafka_config": [], "redis": ""},
+            "outcomes": {
+                "batch_size": 1,
+                "batch_interval": 1,
+                "aggregator": {
+                    "bucket_interval": 1,
+                    "flush_interval": 0,
+                },
+            },
+            "aggregator": {
+                "bucket_interval": 1,
+                "initial_delay": 0,
+            },
+        }
+
+        if static_relays is not None:
+            default_opts["auth"] = {"static_relays": static_relays}
+        if static_credentials is not None:
+            auth = default_opts.setdefault("auth", {})
+            static_relays = auth.setdefault("static_relays", {})
+            static_relays[static_credentials["id"]] = {
+                "public_key": static_credentials["public_key"],
+                "internal": True,
+            }
+
+        if options is not None:
+            for key, value in options.items():
+                if isinstance(value, list):
+                    default_opts[key] = value
+                else:
+                    default_opts.setdefault(key, {}).update(value)
+
+        dir = config_dir("relay")
+        dir.join("config.yml").write(yaml.dump(default_opts))
+
+        if credentials is None:
+            subprocess.check_output(
+                relay_bin + ["-c", str(dir), "credentials", "generate"]
+            )
+            with open(dir.join("credentials.json")) as f:
+                credentials = json.load(f)
+        else:
+            with open(dir.join("credentials.json"), "w") as f:
+                f.write(json.dumps(credentials))
+
+        public_key = credentials.get("public_key")
+        assert public_key is not None
+        secret_key = credentials.get("secret_key")
+        assert secret_key is not None
+        relay_id = credentials.get("id")
+        assert relay_id is not None
+
+        if prepare is not None:
+            prepare(dir)
+
+        mini_sentry.known_relays[relay_id] = {
+            "publicKey": public_key,
+            "internal": not external,
+            "version": version,
+        }
+
+        process = background_process(relay_bin + ["-c", str(dir), "run"])
+
+        relay = Relay(
+            (host, port),
+            process,
+            upstream,
+            public_key,
+            secret_key,
+            relay_id,
+            dir,
+            default_opts,
+            version,
+        )
+
+        if wait_health_check:
+            relay.wait_health_check("live")
+            if wait_health_check == "ready":
+                relay.wait_health_check("ready")
+
+            # Filter out health check failures, which can happen during startup
+            filtered_test_failures = Queue()
+            for f in mini_sentry.current_test_failures():
+                if "Health check probe" not in str(f):
+                    filtered_test_failures.put(f)
+            mini_sentry.test_failures = filtered_test_failures
+
+        return relay
+
+    return inner
+
+
+@pytest.fixture
+def latest_relay_version(get_relay_binary):
+    version_str = subprocess.check_output(
+        get_relay_binary() + ["--version"], text=True
+    ).strip()
+    _the_word_relay, version = version_str.split(" ", 1)
+    return version
+
+
+def get_internal_address(options, server_address):
+    relay = (options or {}).get("relay", {})
+    host = relay.get("internal_host")
+    port = relay.get("internal_port")
+    return (host or server_address[0], port or server_address[1])

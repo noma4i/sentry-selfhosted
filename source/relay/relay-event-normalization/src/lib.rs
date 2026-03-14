@@ -1,0 +1,63 @@
+//! Event normalization and processing.
+
+#![warn(missing_docs)]
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/getsentry/relay/master/artwork/relay-icon.png",
+    html_favicon_url = "https://raw.githubusercontent.com/getsentry/relay/master/artwork/relay-icon.png"
+)]
+
+mod clock_drift;
+pub mod eap;
+mod event;
+mod event_error;
+mod geo;
+mod legacy;
+mod logentry;
+mod mechanism;
+mod normalize;
+mod regexes;
+mod remove_other;
+mod schema;
+mod stacktrace;
+mod statsd;
+mod timestamp;
+mod transactions;
+mod trimming;
+mod validation;
+
+pub use validation::{EventValidationConfig, validate_event, validate_span};
+pub mod replay;
+pub use event::{
+    NormalizationConfig, normalize_event, normalize_measurements, normalize_performance_score,
+};
+pub use normalize::breakdowns::*;
+pub use normalize::*;
+pub use remove_other::RemoveOtherProcessor;
+pub use schema::{RequiredMode, SchemaProcessor};
+pub use timestamp::TimestampProcessor;
+pub use transactions::*;
+pub use trimming::TrimmingProcessor;
+pub use user_agent::*;
+
+pub use self::clock_drift::*;
+pub use self::geo::*;
+
+pub use sentry_release_parser::{validate_environment, validate_release};
+
+/// Maximum number of characters allowed for a field value.
+///
+/// Must be aligned with the `max_chars` field in the metastructure of the
+/// payload's attribute.
+enum MaxChars {
+    Distribution,
+    Logger,
+}
+
+impl MaxChars {
+    pub fn limit(self) -> usize {
+        match self {
+            Self::Distribution => 64,
+            Self::Logger => 64,
+        }
+    }
+}

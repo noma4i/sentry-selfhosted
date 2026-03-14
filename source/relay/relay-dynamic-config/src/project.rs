@@ -1,0 +1,327 @@
+use relay_auth::PublicKey;
+use relay_event_normalization::{
+    BreakdownsConfig, MeasurementsConfig, PerformanceScoreConfig, SpanDescriptionRule,
+    TransactionNameRule,
+};
+use relay_filter::ProjectFiltersConfig;
+use relay_pii::{DataScrubbingConfig, PiiConfig};
+use relay_quotas::Quota;
+use relay_sampling::SamplingConfig;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::error_boundary::ErrorBoundary;
+use crate::feature::FeatureSet;
+use crate::metrics::{
+    self, MetricExtractionConfig, Metrics, SessionMetricsConfig, TaggingRule,
+    TransactionMetricsConfig,
+};
+use crate::trusted_relay::TrustedRelayConfig;
+use crate::{GRADUATED_FEATURE_FLAGS, defaults};
+
+/// Dynamic, per-DSN configuration passed down from Sentry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProjectConfig {
+    /// URLs that are permitted for cross original JavaScript requests.
+    pub allowed_domains: Vec<String>,
+    /// List of relay public keys that are permitted to access this project.
+    pub trusted_relays: Vec<PublicKey>,
+    /// Configuration for trusted Relay behaviour.
+    #[serde(skip_serializing_if = "TrustedRelayConfig::is_empty")]
+    pub trusted_relay_settings: TrustedRelayConfig,
+    /// Configuration for PII stripping.
+    pub pii_config: Option<PiiConfig>,
+    /// The grouping configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grouping_config: Option<Value>,
+    /// Configuration for filter rules.
+    #[serde(skip_serializing_if = "ProjectFiltersConfig::is_empty")]
+    pub filter_settings: ProjectFiltersConfig,
+    /// Configuration for data scrubbers.
+    #[serde(skip_serializing_if = "DataScrubbingConfig::is_disabled")]
+    pub datascrubbing_settings: DataScrubbingConfig,
+    /// Maximum event retention for the organization.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_retention: Option<u16>,
+    /// Maximum sampled event retention for the organization.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downsampled_event_retention: Option<u16>,
+    /// Retention settings for different products.
+    #[serde(default, skip_serializing_if = "RetentionsConfig::is_empty")]
+    pub retentions: RetentionsConfig,
+    /// Trimming settings for different products.
+    #[serde(default, skip_serializing_if = "TrimmingConfigs::is_empty")]
+    pub trimming: TrimmingConfigs,
+    /// Usage quotas for this project.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub quotas: Vec<Quota>,
+    /// Configuration for sampling traces, if not present there will be no sampling.
+    #[serde(alias = "dynamicSampling", skip_serializing_if = "Option::is_none")]
+    pub sampling: Option<ErrorBoundary<SamplingConfig>>,
+    /// Configuration for measurements.
+    /// NOTE: do not access directly, use [`relay_event_normalization::CombinedMeasurementsConfig`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub measurements: Option<MeasurementsConfig>,
+    /// Configuration for operation breakdown. Will be emitted only if present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breakdowns_v2: Option<BreakdownsConfig>,
+    /// Configuration for performance score calculations. Will be emitted only if present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub performance_score: Option<PerformanceScoreConfig>,
+    /// Configuration for extracting metrics from sessions.
+    #[serde(skip_serializing_if = "SessionMetricsConfig::is_disabled")]
+    pub session_metrics: SessionMetricsConfig,
+    /// Configuration for extracting metrics from transaction events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_metrics: Option<ErrorBoundary<TransactionMetricsConfig>>,
+    /// Configuration for generic metrics extraction from all data categories.
+    #[serde(default, skip_serializing_if = "skip_metrics_extraction")]
+    pub metric_extraction: ErrorBoundary<MetricExtractionConfig>,
+    /// Rules for applying metrics tags depending on the event's content.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub metric_conditional_tagging: Vec<TaggingRule>,
+    /// Exposable features enabled for this project.
+    #[serde(skip_serializing_if = "FeatureSet::is_empty")]
+    pub features: FeatureSet,
+    /// Transaction renaming rules.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tx_name_rules: Vec<TransactionNameRule>,
+    /// Whether or not a project is ready to mark all URL transactions as "sanitized".
+    #[serde(skip_serializing_if = "is_false")]
+    pub tx_name_ready: bool,
+    /// Span description renaming rules.
+    ///
+    /// These are currently not used by Relay, and only here to be forwarded to old
+    /// relays that might still need them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_description_rules: Option<Vec<SpanDescriptionRule>>,
+    /// Configuration for metrics.
+    #[serde(default, skip_serializing_if = "skip_metrics")]
+    pub metrics: ErrorBoundary<Metrics>,
+}
+
+impl ProjectConfig {
+    /// Validates fields in this project config and removes values that are partially invalid.
+    pub fn sanitize(&mut self, report_errors: bool) {
+        self.remove_invalid_quotas(report_errors);
+
+        metrics::convert_conditional_tagging(self);
+        defaults::add_span_metrics(self);
+
+        if let Some(ErrorBoundary::Ok(ref mut sampling_config)) = self.sampling {
+            sampling_config.normalize();
+        }
+
+        for flag in GRADUATED_FEATURE_FLAGS {
+            self.features.0.insert(*flag);
+        }
+    }
+
+    fn remove_invalid_quotas(&mut self, report_errors: bool) {
+        let invalid_quotas: Vec<_> = self.quotas.extract_if(.., |q| !q.is_valid()).collect();
+        if report_errors {
+            if !invalid_quotas.is_empty() {
+                {
+                    relay_log::warn!(
+                        invalid_quotas = ?invalid_quotas,
+                        "Found an invalid quota definition",
+                    );
+                }
+            }
+            // Check if indexed and non-indexed are double-counting towards the same ID.
+            // This is probably not intended behavior.
+            for quota in &self.quotas {
+                if let Some(id) = quota.id.as_deref() {
+                    for category in &*quota.categories {
+                        if let Some(indexed) = category.index_category()
+                            && quota.categories.contains(&indexed)
+                        {
+                            relay_log::error!(
+                                tags.id = id,
+                                "Categories {category} and {indexed} share the same quota ID. This will double-count items.",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Default for ProjectConfig {
+    fn default() -> Self {
+        ProjectConfig {
+            allowed_domains: vec!["*".to_owned()],
+            trusted_relays: vec![],
+            trusted_relay_settings: TrustedRelayConfig::default(),
+            pii_config: None,
+            grouping_config: None,
+            filter_settings: ProjectFiltersConfig::default(),
+            datascrubbing_settings: DataScrubbingConfig::default(),
+            event_retention: None,
+            downsampled_event_retention: None,
+            retentions: Default::default(),
+            trimming: Default::default(),
+            quotas: Vec::new(),
+            sampling: None,
+            measurements: None,
+            breakdowns_v2: None,
+            performance_score: Default::default(),
+            session_metrics: SessionMetricsConfig::default(),
+            transaction_metrics: None,
+            metric_extraction: Default::default(),
+            metric_conditional_tagging: Vec::new(),
+            features: Default::default(),
+            tx_name_rules: Vec::new(),
+            tx_name_ready: false,
+            span_description_rules: None,
+            metrics: Default::default(),
+        }
+    }
+}
+
+fn skip_metrics_extraction(boundary: &ErrorBoundary<MetricExtractionConfig>) -> bool {
+    match boundary {
+        ErrorBoundary::Err(_) => true,
+        ErrorBoundary::Ok(config) => !config.is_enabled(),
+    }
+}
+
+fn skip_metrics(boundary: &ErrorBoundary<Metrics>) -> bool {
+    match boundary {
+        ErrorBoundary::Err(_) => true,
+        ErrorBoundary::Ok(metrics) => metrics.is_empty(),
+    }
+}
+
+/// Subset of [`ProjectConfig`] that is passed to external Relays.
+///
+/// For documentation of the fields, see [`ProjectConfig`].
+#[allow(missing_docs)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase", remote = "ProjectConfig")]
+pub struct LimitedProjectConfig {
+    pub allowed_domains: Vec<String>,
+    pub trusted_relays: Vec<PublicKey>,
+    pub pii_config: Option<PiiConfig>,
+    #[serde(skip_serializing_if = "ProjectFiltersConfig::is_empty")]
+    pub filter_settings: ProjectFiltersConfig,
+    #[serde(skip_serializing_if = "DataScrubbingConfig::is_disabled")]
+    pub datascrubbing_settings: DataScrubbingConfig,
+    #[serde(skip_serializing_if = "TrimmingConfigs::is_empty")]
+    pub trimming: TrimmingConfigs,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sampling: Option<ErrorBoundary<SamplingConfig>>,
+    #[serde(skip_serializing_if = "SessionMetricsConfig::is_disabled")]
+    pub session_metrics: SessionMetricsConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_metrics: Option<ErrorBoundary<TransactionMetricsConfig>>,
+    #[serde(default, skip_serializing_if = "skip_metrics_extraction")]
+    pub metric_extraction: ErrorBoundary<MetricExtractionConfig>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub metric_conditional_tagging: Vec<TaggingRule>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub measurements: Option<MeasurementsConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breakdowns_v2: Option<BreakdownsConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub performance_score: Option<PerformanceScoreConfig>,
+    #[serde(skip_serializing_if = "FeatureSet::is_empty")]
+    pub features: FeatureSet,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tx_name_rules: Vec<TransactionNameRule>,
+    /// Whether or not a project is ready to mark all URL transactions as "sanitized".
+    #[serde(skip_serializing_if = "is_false")]
+    pub tx_name_ready: bool,
+    /// Span description renaming rules.
+    ///
+    /// These are currently not used by Relay, and only here to be forwarded to old
+    /// relays that might still need them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_description_rules: Option<Vec<SpanDescriptionRule>>,
+}
+
+/// Per-Category settings for retention policy.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct RetentionConfig {
+    /// Standard / full fidelity retention policy in days.
+    pub standard: u16,
+    /// Downsampled retention policy in days.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downsampled: Option<u16>,
+}
+
+/// Settings for retention policy.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionsConfig {
+    /// Retention settings for logs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log: Option<RetentionConfig>,
+    /// Retention settings for spans.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span: Option<RetentionConfig>,
+    /// Retention settings for metrics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_metric: Option<RetentionConfig>,
+    /// Retention settings for attachments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_attachment: Option<RetentionConfig>,
+}
+
+impl RetentionsConfig {
+    fn is_empty(&self) -> bool {
+        let Self {
+            log,
+            span,
+            trace_metric,
+            trace_attachment,
+        } = self;
+
+        log.is_none() && span.is_none() && trace_metric.is_none() && trace_attachment.is_none()
+    }
+}
+
+/// Per-category settings for item trimming.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrimmingConfig {
+    /// The maximum size in bytes above which an item should be trimmed.
+    pub max_size: u32,
+}
+
+/// Settings for item trimming.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TrimmingConfigs {
+    /// Trimming settings for spans.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span: Option<TrimmingConfig>,
+}
+
+impl TrimmingConfigs {
+    fn is_empty(&self) -> bool {
+        let Self { span } = self;
+        span.is_none()
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Feature;
+
+    use super::*;
+
+    #[test]
+    fn graduated_feature_flag_gets_inserted() {
+        let mut project_config = ProjectConfig::default();
+        assert!(!project_config.features.has(Feature::UserReportV2Ingest));
+        project_config.sanitize(false);
+        assert!(project_config.features.has(Feature::UserReportV2Ingest));
+    }
+}

@@ -1,0 +1,29 @@
+WHITESPACE = _{ " " }
+
+ObjectType = @{ "$" ~ ('a' .. 'z' | "_")+ }
+Wildcard = @{ "*" }
+DeepWildcard = @{ "**" }
+
+Quote = _{ "'" }
+And = _{ "&&" | "&" }
+Or = _{ "||" | "|" }
+Not = _{ "~" | "!" }
+EscapedQuote = @{ "'" }
+
+UnquotedKey = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "-" | "_") * }
+RootUnquotedKey = { SOI ~ UnquotedKey ~ EOI }
+QuotedCharacter = @{ ((!"'") ~ ANY) }
+QuotedKey = ${ (QuotedCharacter | ("'" ~ EscapedQuote))+ }
+Key = { UnquotedKey | Quote ~ QuotedKey ~ Quote }
+
+Index = @{ ASCII_DIGIT+ }
+
+SelectorPathItem = { ObjectType | DeepWildcard | Wildcard | Index | Key }
+SelectorPath = { SelectorPathItem ~ ("." ~ SelectorPathItem)* }
+
+ParenthesisOrPath = { "(" ~ OrSelector ~ ")" | SelectorPath }
+NotSelector = { Not ~ ParenthesisOrPath }
+MaybeNotSelector = { NotSelector | ParenthesisOrPath }
+AndSelector = { MaybeNotSelector ~ (And ~ MaybeNotSelector)* }
+OrSelector = { AndSelector ~ (Or ~ AndSelector)* }
+RootSelector = { SOI ~ OrSelector ~ EOI }

@@ -1,0 +1,6 @@
+version: v1
+kind: dataset
+name: outcomes_raw
+
+entities:
+  - outcomes_raw

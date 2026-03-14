@@ -1,0 +1,927 @@
+from __future__ import annotations
+
+import uuid
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from functools import partial
+from itertools import chain
+from typing import Any as AnyType
+from typing import (
+    Callable,
+    Generic,
+    Iterator,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
+
+from snuba.clickhouse.escaping import escape_identifier
+from snuba.utils.constants import NESTED_COL_EXPR_RE
+from snuba.utils.serializable_exception import SerializableException
+
+
+class TypeModifier(ABC):
+    """
+    Changes the semantics of a ColumnType. Usual modifiers are
+    Nullable, WithDefault, or similar.
+    """
+
+    @abstractmethod
+    def for_schema(self, content: str) -> str:
+        """
+        Formats the modifier for DDL statements.
+        The content parameter is the serialized type the modifier
+        applies to.
+        """
+        raise NotImplementedError
+
+
+class TypeModifiers(ABC):
+    """
+    Contains all the modifiers to apply to a type in a schema.
+    An instance of this class is associated to a an instance of a
+    ColumnType and provides the method to format the modifiers.
+
+    The way instances of this class are initialized and the order
+    in which modifiers are applied are up to the subclasses.
+    """
+
+    def for_schema(self, serialized_type: str) -> str:
+        """
+        Formats the modifiers around the pre-formatted ColumnType.
+        """
+        ret = serialized_type
+        for c in self._get_modifiers():
+            ret = c.for_schema(ret)
+        return ret
+
+    @abstractmethod
+    def _get_modifiers(self) -> Sequence[TypeModifier]:
+        """
+        Establishes the order to follow when applying modifiers.
+        """
+        raise NotImplementedError
+
+    def has_modifier(self, modifier: Type[TypeModifier]) -> bool:
+        """
+        Returns true if a modifier of the type provided is present in
+        this container.
+        """
+        return any(t for t in self._get_modifiers() if isinstance(t, modifier))
+
+
+TModifiers = TypeVar("TModifiers", bound=TypeModifiers)
+
+
+# Unfortunately we cannot easily make these classes dataclasses (which
+# would provide a convenient default implementation for all __repr__
+# and __eq__ methods and allow for immutability) while keeping the
+# schemas and migration concise.
+# Making this a dataclass would mean `modifiers` would have to be the
+# first argument of the constructor meaning that an empty list would
+# have to be provided everytime we define a column in a migration or
+# in a schema.
+class ColumnType(Generic[TModifiers]):
+    def __init__(self, modifiers: Optional[TModifiers] = None):
+        self.__modifiers = modifiers
+
+    def __repr__(self) -> str:
+        # return f"{self.__class__.__name__}({self._repr_content()})[{self.__modifiers}]"
+        repr_content = self._repr_content()
+        if repr_content:
+            return "schemas.{}({}, modifiers={})".format(
+                self.__class__.__name__, repr_content, repr(self.__modifiers)
+            )
+        else:
+            return "schemas.{}(modifiers={})".format(
+                self.__class__.__name__, repr(self.__modifiers)
+            )
+
+    def _repr_content(self) -> str:
+        """
+        Extend if the type you are building has additional parameters
+        to show in the representation.
+        """
+        return ""
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.__modifiers == cast(ColumnType[TModifiers], other).get_modifiers()
+        )
+
+    def for_schema(self) -> str:
+        return (
+            self.__modifiers.for_schema(self._for_schema_impl())
+            if self.__modifiers is not None
+            else self._for_schema_impl()
+        )
+
+    def _for_schema_impl(self) -> str:
+        """
+        Provides the clickhouse representation of this type
+        without including the modifiers.
+        """
+        return self.__class__.__name__
+
+    def flatten(self, name: str) -> Sequence[FlattenedColumn]:
+        return [FlattenedColumn(None, name, self)]
+
+    def get_modifiers(self) -> Optional[TModifiers]:
+        return self.__modifiers
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> ColumnType[TModifiers]:
+        """
+        Returns a new instance of this class with the provided
+        modifiers.
+        """
+        return type(self)(modifiers=modifiers)
+
+    def get_raw(self) -> ColumnType[TModifiers]:
+        return type(self)()
+
+    def has_modifier(self, modifier: Type[TypeModifier]) -> bool:
+        if self.__modifiers is None:
+            return False
+        return self.__modifiers.has_modifier(modifier)
+
+
+class Column(Generic[TModifiers]):
+    def __init__(self, name: str, type: ColumnType[TModifiers]) -> None:
+        self.name = name
+        self.type = type
+
+        escaped = escape_identifier(self.name)
+        assert escaped is not None
+        self.escaped: str = escaped
+
+    def __repr__(self) -> str:
+        return "Column({}, {})".format(repr(self.name), repr(self.type))
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.name == cast(Column[TModifiers], other).name
+            and self.type == cast(Column[TModifiers], other).type
+        )
+
+    def for_schema(self) -> str:
+        return "{} {}".format(escape_identifier(self.name), self.type.for_schema())
+
+    @staticmethod
+    def to_columns(
+        columns: Sequence[Union[Column[TModifiers], tuple[str, ColumnType[TModifiers]]]],
+    ) -> Sequence[Column[TModifiers]]:
+        return [Column(*col) if not isinstance(col, Column) else col for col in columns]
+
+
+class FlattenedColumn:
+    def __init__(self, base_name: Optional[str], name: str, type: ColumnType[TModifiers]) -> None:
+        self.base_name = base_name
+        self.name = name
+        self.type = type
+
+        self.flattened = "{}.{}".format(self.base_name, self.name) if self.base_name else self.name
+        escaped = escape_identifier(self.flattened)
+        assert escaped is not None
+        self.escaped: str = escaped
+
+    def __repr__(self) -> str:
+        return "FlattenedColumn({}, {}, {})".format(
+            repr(self.base_name), repr(self.name), repr(self.type)
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.flattened == cast(FlattenedColumn, other).flattened
+            and self.type == cast(FlattenedColumn, other).type
+        )
+
+
+@dataclass(frozen=True)
+class SchemaModifiers(TypeModifiers):
+    """
+    Modifiers for the schemas we use during query processing.
+    """
+
+    nullable: bool = False
+    readonly: bool = False
+
+    def _get_modifiers(self) -> Sequence[TypeModifier]:
+        ret: List[TypeModifier] = []
+        if self.nullable:
+            ret.append(Nullable())
+        if self.readonly:
+            ret.append(ReadOnly())
+        return ret
+
+
+class WildcardColumn(Column[SchemaModifiers]):
+    pass
+
+
+@dataclass(frozen=True)
+class ReadOnly(TypeModifier):
+    def for_schema(self, content: str) -> str:
+        return content
+
+
+@dataclass(frozen=True)
+class Nullable(TypeModifier):
+    def for_schema(self, content: str) -> str:
+        return "Nullable({})".format(content)
+
+
+class ColumnSet(ABC):
+    """
+    Base column set extended by both ClickHouse column set and entity column set
+    A base column set class that will be shared by logical (entity) and physical (ClickHouse)
+    data models
+    """
+
+    def __init__(self, columns: Sequence[Column[SchemaModifiers]]) -> None:
+        self.__columns = columns
+
+        self._wildcard_columns = {
+            col.name: col for col in columns if isinstance(col, WildcardColumn)
+        }
+
+        self._lookup: MutableMapping[str, Sequence[FlattenedColumn]] = {}
+        self._nested = {}
+
+        self._flattened: List[FlattenedColumn] = []
+        self._flattened_lookup: MutableMapping[str, FlattenedColumn] = {}
+
+        for column in self.__columns:
+            if not isinstance(column, WildcardColumn):
+                self._flattened.extend(column.type.flatten(column.name))
+                flattened = column.type.flatten(column.name)
+                self._lookup[column.name] = flattened
+                self._lookup[column.escaped] = flattened  # also store it by the escaped name
+
+        for col in self._flattened:
+            if col.flattened in self._flattened_lookup:
+                raise RuntimeError("Duplicate column: {}".format(col.flattened))
+            if col.base_name:
+                self._nested[col.flattened] = col
+
+            self._flattened_lookup[col.flattened] = col
+            self._flattened_lookup[col.escaped] = col  # also store it by the escaped name
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self._flattened == cast(ColumnSet, other)._flattened
+            and self._wildcard_columns == cast(ColumnSet, other)._wildcard_columns
+        )
+
+    def __getitem__(self, key: str) -> FlattenedColumn:
+        if key in self._flattened_lookup:
+            return self._flattened_lookup[key]
+
+        if self._wildcard_columns:
+            match = NESTED_COL_EXPR_RE.match(key)
+
+            if match is not None:
+                wildcard_prefix = match[1]
+                if wildcard_prefix in self._wildcard_columns:
+                    return self._wildcard_columns[wildcard_prefix].type.flatten(key)[0]
+
+        raise KeyError(key)
+
+    def get(self, key: str, default: Optional[FlattenedColumn] = None) -> Optional[FlattenedColumn]:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __contains__(self, key: str) -> bool:
+        if key in self._lookup:
+            return True
+        if key in self._nested:
+            return True
+
+        if self._wildcard_columns:
+            match = NESTED_COL_EXPR_RE.match(key)
+
+            if match is not None:
+                col_name = match[1]
+                if col_name in self._wildcard_columns:
+                    return True
+
+        return False
+
+    def __iter__(self) -> Iterator[FlattenedColumn]:
+        for col in self._flattened:
+            yield col
+
+        for wildcard_col in self._wildcard_columns.values():
+            wildcard_name = col.name + "[...]"
+            yield wildcard_col.type.flatten(wildcard_name)[0]
+
+    def __len__(self) -> int:
+        return len(self._flattened) + len(self._wildcard_columns)
+
+    @property
+    def columns(self) -> Sequence[Column[SchemaModifiers]]:
+        return self.__columns
+
+
+class Any(ColumnType[SchemaModifiers]):
+    """
+    Special type to be used in ColumnSets that represent the select
+    statement of a subquery since that is the schema the subquery
+    provides to the query that contains it.
+
+    Of course this cannot be used for migrations since this type does
+    not exist in Clickhouse.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(None)
+
+
+class Array(ColumnType[TModifiers]):
+    def __init__(
+        self, inner_type: ColumnType[TModifiers], modifiers: Optional[TModifiers] = None
+    ) -> None:
+        super().__init__(modifiers)
+        self.inner_type = inner_type
+
+    def _repr_content(self) -> str:
+        return repr(self.inner_type)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.inner_type == cast(Array[TModifiers], other).inner_type
+            and self.get_modifiers() == cast(Array[TModifiers], other).get_modifiers()
+        )
+
+    def _for_schema_impl(self) -> str:
+        inner_schema = self.inner_type.for_schema().split("CODEC", 1)
+        if len(inner_schema) == 1:
+            inner_type = inner_schema[0]
+            return f"Array({inner_type})"
+        else:
+            inner_type, codec_modifiers = inner_schema
+            return f"Array({inner_type}) CODEC {codec_modifiers}"
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Array[TModifiers]:
+        return Array(inner_type=self.inner_type, modifiers=modifiers)
+
+    def get_raw(self) -> Array[TModifiers]:
+        return Array(inner_type=self.inner_type.get_raw())
+
+
+class Map(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        key: ColumnType[TModifiers],
+        value: ColumnType[TModifiers],
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        self.key = key
+        self.value = value
+
+    def _repr_content(self) -> str:
+        return repr(self.key) + ", " + repr(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.key == cast(Map[TModifiers], other).key
+            and self.value == cast(Map[TModifiers], other).value
+            and self.get_modifiers() == cast(Map[TModifiers], other).get_modifiers()
+        )
+
+    def _for_schema_impl(self) -> str:
+        return f"Map({self.key.for_schema()}, {self.value.for_schema()})"
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Map[TModifiers]:
+        return Map(key=self.key, value=self.value, modifiers=modifiers)
+
+    def get_raw(self) -> Map[TModifiers]:
+        return Map(key=self.key.get_raw(), value=self.value.get_raw())
+
+
+class Nested(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        nested_columns: Sequence[Union[Column[TModifiers], tuple[str, ColumnType[TModifiers]]]],
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        self.nested_columns = Column.to_columns(nested_columns)
+
+    def _repr_content(self) -> str:
+        return repr(self.nested_columns)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(Nested[TModifiers], other).get_modifiers()
+            and self.nested_columns == cast(Nested[TModifiers], other).nested_columns
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "Nested({})".format(", ".join(column.for_schema() for column in self.nested_columns))
+
+    def flatten(self, name: str) -> Sequence[FlattenedColumn]:
+        return [
+            FlattenedColumn(name, column.name, Array(column.type)) for column in self.nested_columns
+        ]
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Nested[TModifiers]:
+        return Nested(nested_columns=self.nested_columns, modifiers=modifiers)
+
+    def get_raw(self) -> Nested[TModifiers]:
+        raw_columns = [Column(c.name, c.type.get_raw()) for c in self.nested_columns]
+        return Nested(nested_columns=raw_columns)
+
+
+class AggregateFunction(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        func: str,
+        arg_types: Sequence[ColumnType[TModifiers]],
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        self.func = func
+        self.arg_types = arg_types
+
+    def _repr_content(self) -> str:
+        return ", ".join(repr(x) for x in chain([self.func], self.arg_types))
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(AggregateFunction[TModifiers], other).get_modifiers()
+            and self.func == cast(AggregateFunction[TModifiers], other).func
+            and self.arg_types == cast(AggregateFunction[TModifiers], other).arg_types
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "AggregateFunction({})".format(
+            ", ".join(chain([self.func], (x.for_schema() for x in self.arg_types))),
+        )
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> AggregateFunction[TModifiers]:
+        return AggregateFunction(self.func, self.arg_types, modifiers)
+
+    def get_raw(self) -> AggregateFunction[TModifiers]:
+        return AggregateFunction(self.func, [t.get_raw() for t in self.arg_types])
+
+
+class SimpleAggregateFunction(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        func: str,
+        arg_types: Sequence[ColumnType[TModifiers]],
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        self.func = func
+        self.arg_types = arg_types
+
+    def _repr_content(self) -> str:
+        return ", ".join(repr(x) for x in chain([self.func], self.arg_types))
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers()
+            == cast(SimpleAggregateFunction[TModifiers], other).get_modifiers()
+            and self.func == cast(SimpleAggregateFunction[TModifiers], other).func
+            and self.arg_types == cast(SimpleAggregateFunction[TModifiers], other).arg_types
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "SimpleAggregateFunction({})".format(
+            ", ".join(chain([self.func], (x.for_schema() for x in self.arg_types))),
+        )
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> SimpleAggregateFunction[TModifiers]:
+        return SimpleAggregateFunction(self.func, self.arg_types, modifiers)
+
+    def get_raw(self) -> SimpleAggregateFunction[TModifiers]:
+        return SimpleAggregateFunction(self.func, [t.get_raw() for t in self.arg_types])
+
+
+class String(ColumnType[TModifiers]):
+    pass
+
+
+class UUID(ColumnType[TModifiers]):
+    pass
+
+
+class IPv4(ColumnType[TModifiers]):
+    pass
+
+
+class IPv6(ColumnType[TModifiers]):
+    pass
+
+
+class FixedString(ColumnType[TModifiers]):
+    def __init__(self, length: int, modifiers: Optional[TModifiers] = None) -> None:
+        super().__init__(modifiers)
+        self.length = length
+
+    def _repr_content(self) -> str:
+        return str(self.length)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(FixedString[TModifiers], other).get_modifiers()
+            and self.length == cast(FixedString[TModifiers], other).length
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "FixedString({})".format(self.length)
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> FixedString[TModifiers]:
+        return FixedString(length=self.length, modifiers=modifiers)
+
+    def get_raw(self) -> FixedString[TModifiers]:
+        return FixedString(self.length)
+
+
+class UInt(ColumnType[TModifiers]):
+    def __init__(self, size: int, modifiers: Optional[TModifiers] = None) -> None:
+        super().__init__(modifiers)
+        assert size in (8, 16, 32, 64, 128)
+        self.size = size
+
+    def _repr_content(self) -> str:
+        return str(self.size)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(UInt[TModifiers], other).get_modifiers()
+            and self.size == cast(UInt[TModifiers], other).size
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "UInt{}".format(self.size)
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> UInt[TModifiers]:
+        return UInt(size=self.size, modifiers=modifiers)
+
+    def get_raw(self) -> UInt[TModifiers]:
+        return UInt(self.size)
+
+
+class Int(ColumnType[TModifiers]):
+    def __init__(self, size: int, modifiers: Optional[TModifiers] = None) -> None:
+        super().__init__(modifiers)
+        assert size in (8, 16, 32, 64, 128)
+        self.size = size
+
+    def _repr_content(self) -> str:
+        return str(self.size)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(Int[TModifiers], other).get_modifiers()
+            and self.size == cast(Int[TModifiers], other).size
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "Int{}".format(self.size)
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Int[TModifiers]:
+        return Int(size=self.size, modifiers=modifiers)
+
+    def get_raw(self) -> Int[TModifiers]:
+        return Int(self.size)
+
+
+class Float(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        size: int,
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        assert size in (32, 64)
+        self.size = size
+
+    def _repr_content(self) -> str:
+        return str(self.size)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(Float[TModifiers], other).get_modifiers()
+            and self.size == cast(Float[TModifiers], other).size
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "Float{}".format(self.size)
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Float[TModifiers]:
+        return Float(size=self.size, modifiers=modifiers)
+
+    def get_raw(self) -> Float[TModifiers]:
+        return Float(self.size)
+
+
+class Date(ColumnType[TModifiers]):
+    pass
+
+
+class DateTime(ColumnType[TModifiers]):
+    pass
+
+
+class DateTime64(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        precision: int = 3,
+        timezone: Optional[str] = None,
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        assert precision <= 9
+        super().__init__(modifiers)
+        self.timezone = timezone
+        self.precision = precision
+
+    def _repr_content(self) -> str:
+        content = f"{self.precision}"
+        if self.timezone:
+            content += f", '{self.timezone}'"
+        return content
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers()
+            == cast(
+                DateTime64[TModifiers],
+                other,
+            ).get_modifiers()
+            and self.precision == cast(DateTime64[TModifiers], other).precision
+            and self.timezone == cast(DateTime64[TModifiers], other).timezone
+        )
+
+    def _for_schema_impl(self) -> str:
+        return f"DateTime64({self._repr_content()})"
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> DateTime64[TModifiers]:
+        return DateTime64(
+            precision=self.precision,
+            timezone=self.timezone,
+            modifiers=modifiers,
+        )
+
+    def get_raw(self) -> DateTime64[TModifiers]:
+        return DateTime64(
+            precision=self.precision,
+            timezone=self.timezone,
+        )
+
+
+class Enum(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        values: Sequence[tuple[str, int]],
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        self.values = values
+
+    def _repr_content(self) -> str:
+        return ", ".join("'{}' = {}".format(v[0], v[1]) for v in self.values)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(Enum[TModifiers], other).get_modifiers()
+            and self.values == cast(Enum[TModifiers], other).values
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "Enum({})".format(", ".join("'{}' = {}".format(v[0], v[1]) for v in self.values))
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Enum[TModifiers]:
+        return Enum(values=self.values, modifiers=modifiers)
+
+    def get_raw(self) -> Enum[TModifiers]:
+        return Enum(self.values)
+
+
+class Tuple(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        types: tuple[ColumnType[TModifiers], ...],
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        self.types = types
+
+    def _repr_content(self) -> str:
+        return ", ".join("{}".format(v) for v in self.types)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(Tuple[TModifiers], other).get_modifiers()
+            and self.types == cast(Tuple[TModifiers], other).types
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "Tuple({})".format(", ".join("{}".format(t.for_schema()) for t in self.types))
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Tuple[TModifiers]:
+        return Tuple(types=self.types, modifiers=modifiers)
+
+    def get_raw(self) -> Tuple[TModifiers]:
+        return Tuple(self.types)
+
+
+class InvalidColumnType(SerializableException):
+    pass
+
+
+class ColumnValidator:
+    def __init__(self, column_set: ColumnSet):
+        self._column_set = column_set
+
+    def type_validation_function(
+        self, expected_type: ColumnType[TModifiers]
+    ) -> Callable[[AnyType], bool]:
+        match expected_type:
+            case UUID():
+                return self._valid_uuid
+            case Int():
+                return self._valid_int
+            case UInt():
+                return self._valid_uint
+            case Float():
+                return self._valid_float
+            case String():
+                return self._valid_string
+            case Tuple():
+                return partial(self._valid_tuple, expected_type)
+            case _:
+                raise InvalidColumnType(f"No validator for type: {expected_type}")
+
+    def validate(self, column_name: str, values: Sequence[AnyType]) -> None:
+        expected_type = self._column_set[column_name].type
+        is_valid_func: Callable[[AnyType], bool] = self.type_validation_function(expected_type)
+        for val in values:
+            if is_valid_func(val):
+                continue
+            raise InvalidColumnType(f"Invalid value {val} for column type {expected_type}")
+
+    def _valid_uuid(self, value: str) -> bool:
+        try:
+            uuid.UUID(str(value))
+            return True
+        except ValueError:
+            return False
+
+    def _valid_int(self, value: int) -> bool:
+        return isinstance(value, int)
+
+    def _valid_uint(self, value: int) -> bool:
+        return isinstance(value, int) and value > 0
+
+    def _valid_float(self, value: float) -> bool:
+        return isinstance(value, float)
+
+    def _valid_string(self, value: str) -> bool:
+        return isinstance(value, str)
+
+    def _valid_tuple(self, tuple_column: Tuple[AnyType], value: tuple[Any]) -> bool:
+        if not isinstance(value, tuple):
+            return False
+        assert len(value) == len(tuple_column.types), (
+            "number of tuple arg types and actual values don't match"
+        )
+        for i, el in enumerate(value):
+            is_valid_func = self.type_validation_function(tuple_column.types[i])
+            if is_valid_func(el):
+                continue
+            raise InvalidColumnType(f"Invalid value {el} for column type {tuple_column.types[i]}")
+        return True
+
+
+class Bool(ColumnType[TModifiers]):
+    def __init__(self, modifiers: Optional[TModifiers] = None) -> None:
+        super().__init__(modifiers)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(Int[TModifiers], other).get_modifiers()
+        )
+
+    def _for_schema_impl(self) -> str:
+        return "Bool"
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> Bool[TModifiers]:
+        return Bool(modifiers=modifiers)
+
+    def get_raw(self) -> Bool[TModifiers]:
+        return Bool()
+
+
+class JSON(ColumnType[TModifiers]):
+    def __init__(
+        self,
+        max_dynamic_paths: Optional[int] = None,
+        max_dynamic_types: Optional[int] = None,
+        type_hints: Mapping[str, ColumnType[TModifiers]] = {},
+        skip_paths: list[str] = [],
+        skip_regexp: list[str] = [],
+        modifiers: Optional[TModifiers] = None,
+    ) -> None:
+        super().__init__(modifiers)
+        self.max_dynamic_paths = max_dynamic_paths
+        self.max_dynamic_types = max_dynamic_types
+        self.type_hints = type_hints or {}
+        self.skip_paths = skip_paths or []
+        self.skip_regexp = skip_regexp
+
+    def _repr_content(self) -> str:
+        parts = []
+        if self.max_dynamic_paths:
+            parts.append(f"max_dynamic_paths={self.max_dynamic_paths}")
+        if self.max_dynamic_types:
+            parts.append(f"max_dynamic_types={self.max_dynamic_types}")
+        parts.append(f"type_hints={self.type_hints}")
+        parts.append(f"skip_paths={self.skip_paths}")
+        parts.append(f"skip_regexp='{self.skip_regexp}'")
+        return ", ".join(parts)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            self.__class__ == other.__class__
+            and self.get_modifiers() == cast(JSON[TModifiers], other).get_modifiers()
+            and self.max_dynamic_paths == cast(JSON[TModifiers], other).max_dynamic_paths
+            and self.max_dynamic_types == cast(JSON[TModifiers], other).max_dynamic_types
+            and self.type_hints == cast(JSON[TModifiers], other).type_hints
+            and self.skip_paths == cast(JSON[TModifiers], other).skip_paths
+            and self.skip_regexp == cast(JSON[TModifiers], other).skip_regexp
+        )
+
+    def _for_schema_impl(self) -> str:
+        parts = []
+        # Add max_dynamic_paths
+        if self.max_dynamic_paths:
+            parts.append(f"max_dynamic_paths={self.max_dynamic_paths}")
+
+        # Add max_dynamic_types
+        if self.max_dynamic_types:
+            parts.append(f"max_dynamic_types={self.max_dynamic_types}")
+
+        # Add type hints
+        for path, column_type in self.type_hints.items():
+            parts.append(f"{path} {column_type.for_schema()}")
+
+        # Add skip paths
+        for skip_path in self.skip_paths:
+            parts.append(f"SKIP {skip_path}")
+
+        # Add skip regexp
+        for skip_regexp in self.skip_regexp:
+            parts.append(f"SKIP REGEXP '{skip_regexp}'")
+
+        if parts:
+            return f"JSON({', '.join(parts)})"
+        else:
+            return "JSON"
+
+    def set_modifiers(self, modifiers: Optional[TModifiers]) -> JSON[TModifiers]:
+        return JSON(
+            max_dynamic_paths=self.max_dynamic_paths,
+            max_dynamic_types=self.max_dynamic_types,
+            type_hints=self.type_hints,
+            skip_paths=self.skip_paths,
+            skip_regexp=self.skip_regexp,
+            modifiers=modifiers,
+        )
+
+    def get_raw(self) -> JSON[TModifiers]:
+        return JSON(
+            max_dynamic_paths=self.max_dynamic_paths,
+            max_dynamic_types=self.max_dynamic_types,
+            type_hints={k: v.get_raw() for k, v in self.type_hints.items()},
+            skip_paths=self.skip_paths,
+            skip_regexp=self.skip_regexp,
+        )

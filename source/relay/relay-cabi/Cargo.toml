@@ -1,0 +1,39 @@
+[package]
+name = "relay-cabi"
+version = "0.9.24"
+authors = ["Sentry <oss@sentry.io>"]
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+description = "Exposes some internals of the relay to C."
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true, features = ["backtrace"] }
+chrono = { workspace = true }
+globset = { workspace = true }
+json-forensics = { workspace = true }
+lru = { workspace = true }
+regex = { workspace = true }
+relay-auth = { workspace = true }
+relay-base-schema = { workspace = true }
+relay-cardinality = { workspace = true }
+relay-common = { workspace = true }
+relay-dynamic-config = { workspace = true }
+relay-event-normalization = { workspace = true }
+relay-event-schema = { workspace = true }
+relay-ffi = { workspace = true }
+relay-pii = { workspace = true }
+relay-protocol = { workspace = true }
+relay-sampling = { workspace = true }
+sentry-release-parser = { workspace = true, features = ["serde", "semver-1"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }

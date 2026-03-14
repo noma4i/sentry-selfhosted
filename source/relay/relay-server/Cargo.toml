@@ -1,0 +1,165 @@
+[package]
+name = "relay-server"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Endpoints and services for Relay"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+build = "build.rs"
+license-file = "../LICENSE.md"
+publish = false
+
+[features]
+default = []
+processing = [
+  "dep:minidump",
+  "dep:prost-types",
+  "dep:sentry_protos",
+  "dep:symbolic-common",
+  "dep:symbolic-unreal",
+  "relay-cardinality/redis",
+  "relay-config/processing",
+  "relay-kafka/producer",
+  "relay-metrics/redis",
+  "relay-quotas/redis",
+  "relay-redis/impl",
+  "relay-sampling/redis",
+]
+
+[lints]
+workspace = true
+
+[dependencies]
+ahash = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+axum = { workspace = true, features = ["macros", "matched-path", "tracing"] }
+axum-extra = { workspace = true }
+axum-server = { workspace = true }
+backoff = { workspace = true }
+brotli = { workspace = true }
+bytecount = { workspace = true }
+bytes = { workspace = true, features = ["serde"] }
+bzip2 = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+data-encoding = { workspace = true }
+either = { workspace = true }
+flate2 = { workspace = true }
+futures = { workspace = true, features = ["async-await"] }
+hashbrown = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+itertools = { workspace = true }
+json-forensics = { workspace = true }
+libc = { workspace = true }
+liblzma = { workspace = true }
+matchit = { workspace = true }
+mime = { workspace = true }
+minidump = { workspace = true, optional = true }
+multer = { workspace = true }
+objectstore-client = { workspace = true }
+opentelemetry-proto = { workspace = true }
+papaya = { workspace = true }
+pin-project-lite = { workspace = true }
+priority-queue = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true, optional = true }
+rand = { workspace = true }
+regex = { workspace = true }
+relay-auth = { workspace = true }
+relay-base-schema = { workspace = true }
+relay-cardinality = { workspace = true }
+relay-cogs = { workspace = true }
+relay-common = { workspace = true }
+relay-config = { workspace = true }
+relay-dynamic-config = { workspace = true }
+relay-event-normalization = { workspace = true }
+relay-event-schema = { workspace = true }
+relay-filter = { workspace = true }
+relay-kafka = { workspace = true, optional = true }
+relay-log = { workspace = true, features = ["sentry"] }
+relay-metrics = { workspace = true }
+relay-monitors = { workspace = true }
+relay-ourlogs = { workspace = true }
+relay-pii = { workspace = true }
+relay-profiling = { workspace = true }
+relay-prosperoconv = { workspace = true }
+relay-protocol = { workspace = true }
+relay-quotas = { workspace = true }
+relay-redis = { workspace = true }
+relay-replays = { workspace = true }
+relay-conventions = { workspace = true }
+relay-sampling = { workspace = true }
+relay-spans = { workspace = true }
+relay-statsd = { workspace = true }
+relay-system = { workspace = true }
+relay-threading = { workspace = true }
+reqwest = { workspace = true, features = [
+  "gzip",
+  "hickory-dns",
+  "stream",
+  "native-tls-vendored",
+] }
+rmp-serde = { workspace = true }
+semver = { workspace = true }
+sentry = { workspace = true, features = ["tower-http"] }
+sentry_protos = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+serde_json = { workspace = true }
+serde_path_to_error = { workspace = true }
+serde_urlencoded = { workspace = true }
+smallvec = { workspace = true, features = ["drain_filter"] }
+socket2 = { workspace = true, features = ["all"] }
+sqlx = { workspace = true, features = [
+  "macros",
+  "migrate",
+  "sqlite",
+  "runtime-tokio",
+], default-features = false }
+symbolic-common = { workspace = true, optional = true, default-features = false }
+symbolic-unreal = { workspace = true, optional = true, default-features = false, features = [
+  "serde",
+] }
+sync_wrapper = { workspace = true }
+sysinfo = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
+tokio-util = { workspace = true, default-features = false }
+tower = { workspace = true, default-features = false, features = ["limit"] }
+tower-http = { workspace = true, default-features = false, features = [
+  "catch-panic",
+  "compression-br",
+  "compression-deflate",
+  "compression-gzip",
+  "compression-zstd",
+  "cors",
+  "decompression-br",
+  "decompression-deflate",
+  "decompression-gzip",
+  "decompression-zstd",
+  "limit",
+  "set-header",
+  "trace",
+] }
+url = { workspace = true, features = ["serde"] }
+uuid = { workspace = true, features = ["v5"] }
+zstd = { workspace = true }
+
+
+[dev-dependencies]
+criterion = { workspace = true }
+insta = { workspace = true }
+relay-protocol = { workspace = true, features = ["test"] }
+relay-system = { workspace = true, features = ["test"] }
+relay-test = { workspace = true }
+similar-asserts = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "test-util"] }
+
+[[bench]]
+name = "benches"
+harness = false

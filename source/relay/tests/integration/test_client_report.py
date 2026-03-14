@@ -1,0 +1,102 @@
+import pytest
+from queue import Empty
+from datetime import datetime, timezone, timedelta
+
+
+def test_client_reports(relay, mini_sentry):
+    config = {
+        "outcomes": {
+            "emit_outcomes": True,
+            "batch_size": 1,
+            "batch_interval": 1,
+            "source": "my-layer",
+            "aggregator": {
+                "bucket_interval": 1,
+                "flush_interval": 1,
+            },
+        }
+    }
+
+    relay = relay(mini_sentry, config)
+
+    project_id = 42
+    timestamp = datetime.now(tz=timezone.utc).replace(microsecond=123)
+
+    report_payload = {
+        "timestamp": timestamp.isoformat(),
+        "discarded_events": [
+            {"reason": "queue_overflow", "category": "error", "quantity": 42},
+            {"reason": "queue_overflow", "category": "transaction", "quantity": 1231},
+        ],
+    }
+
+    mini_sentry.add_full_project_config(project_id)
+
+    # Send outcomes twice to see if they are aggregated
+    relay.send_client_report(project_id, report_payload)
+    report_payload["timestamp"] = (timestamp + timedelta(milliseconds=100)).isoformat()
+    relay.send_client_report(project_id, report_payload)
+
+    timestamp_formatted = timestamp.isoformat().split(".")[0] + ".000000Z"
+    assert mini_sentry.get_outcomes(2) == [
+        {
+            "timestamp": timestamp_formatted,
+            "org_id": 1,
+            "project_id": 42,
+            "key_id": 123,
+            "outcome": 5,
+            "reason": "queue_overflow",
+            "source": "my-layer",
+            "category": 1,
+            "quantity": 84,
+        },
+        {
+            "timestamp": timestamp_formatted,
+            "org_id": 1,
+            "project_id": 42,
+            "key_id": 123,
+            "outcome": 5,
+            "reason": "queue_overflow",
+            "source": "my-layer",
+            "category": 2,
+            "quantity": 2462,
+        },
+    ]
+
+    assert mini_sentry.captured_outcomes.empty()
+
+
+def test_client_reports_bad_timestamps(relay, mini_sentry):
+    config = {
+        "outcomes": {
+            "emit_outcomes": True,
+            "batch_size": 1,
+            "batch_interval": 1,
+            "source": "my-layer",
+            "aggregator": {
+                "bucket_interval": 1,
+                "flush_interval": 1,
+            },
+        },
+    }
+
+    relay = relay(mini_sentry, config)
+
+    project_id = 42
+    timestamp = datetime.now(tz=timezone.utc) + timedelta(days=300)
+
+    report_payload = {
+        # too far into the future
+        "timestamp": timestamp.isoformat(),
+        "discarded_events": [
+            {"reason": "queue_overflow", "category": "error", "quantity": 42},
+            {"reason": "queue_overflow", "category": "transaction", "quantity": 1231},
+        ],
+    }
+
+    mini_sentry.add_full_project_config(project_id)
+    relay.send_client_report(project_id, report_payload)
+
+    # we should not have received any outcomes because they are too far into the future
+    with pytest.raises(Empty):
+        mini_sentry.captured_outcomes.get(timeout=1.5)["outcomes"]

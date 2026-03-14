@@ -1,0 +1,22 @@
+---
+source: relay-pii/src/convert.rs
+expression: data
+---
+{
+  "request": {
+    "query_string": [
+      [
+        "foo",
+        "bar"
+      ],
+      [
+        "password",
+        ""
+      ],
+      [
+        "baz",
+        "bar"
+      ]
+    ]
+  }
+}

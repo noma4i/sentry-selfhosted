@@ -1,0 +1,54 @@
+# More information on gocd-flavor YAML can be found here:
+# - https://github.com/tomzo/gocd-yaml-config-plugin#pipeline
+# - https://www.notion.so/sentry/GoCD-New-Service-Quickstart-6d8db7a6964049b3b0e78b8a4b52e25d
+format_version: 10
+pipelines:
+  deploy-relay:
+    group: relay
+    lock_behavior: unlockWhenFinished
+
+    materials:
+      relay_repo:
+        git: git@github.com:getsentry/relay.git
+        shallow_clone: true
+        branch: master
+        destination: relay
+
+    stages:
+      - checks:
+          approval:
+            type: manual
+          fetch_materials: true
+
+          jobs:
+            checks-pipeline-status:
+              environment_variables:
+                # Required for checkruns.
+                GOCD_ACCESS_TOKEN: "{{SECRET:[devinfra][gocd_access_token]}}"
+              timeout: 300
+              elastic_profile_id: relay
+              tasks:
+                - script: |
+                    checks-gocd-pipeline-status \
+                    deploy-relay-processing \
+                    deploy-relay-pop
+      - deploy-relay:
+          approval:
+            type: success
+            allow_only_on_success: true
+          fetch_materials: true
+
+          jobs:
+            trigger-deploys:
+              environment_variables:
+                GOCD_ACCESS_TOKEN: "{{SECRET:[devinfra][gocd_access_token]}}"
+              timeout: 300
+              elastic_profile_id: relay
+              tasks:
+                - script: |
+                    gocd-trigger-pipeline \
+                    --pipeline-name=deploy-relay-processing \
+                    --pipeline-name=deploy-relay-pop \
+                    --pipeline-name=deploy-edge-relay \
+                    --material-name=relay_repo \
+                    --sha="${GO_REVISION_RELAY_REPO}"

@@ -1,0 +1,51 @@
+#!/bin/bash
+# Script: upload debug information and source bundle to Sentry when deploying the new version.
+#
+# Positional arguments:
+#   $1: Release version (commit SHA)
+#
+# Required environment variables:
+#   SENTRY_AUTH_TOKEN: Sentry auth token (https://sentry.io/settings/account/api/auth-tokens/)
+#   SENTRY_ORG: Organization slug
+#   SENTRY_PROJECT: Project slug
+# Optional environment variables:
+#   SENTRY_ENVIRONMENT: Environment name (default: production)
+set -eu
+
+REVISION="${1:-}"
+NAME="${2:-relay}"
+ENVIRONMENT="${SENTRY_ENVIRONMENT:-production}"
+
+if [ -z "${REVISION}" ]; then
+  echo 'No revision specified' && exit 1
+fi
+
+if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+  echo 'No Sentry auth token found' && exit 1
+fi
+
+if [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
+  echo 'No SENTRY_ORG or SENTRY_PROJECT provided' && exit 1
+fi
+
+echo 'Downloading debug info, source bundle, system symbols...'
+for PLATFORM in "linux/amd64" "linux/arm64"; do
+  gsutil cp \
+    "gs://dicd-team-devinfra-cd--relay/deployment-assets/${REVISION}/${NAME}/${PLATFORM}/relay-debug.zip" \
+    "gs://dicd-team-devinfra-cd--relay/deployment-assets/${REVISION}/${NAME}/${PLATFORM}/relay.src.zip" \
+    .
+  echo "Uploading debug information and source bundle for $PLATFORM..."
+  sentry-cli upload-dif ./relay-debug.zip ./relay.src.zip
+
+  rm relay-debug.zip relay.src.zip
+done
+
+gsutil cp "gs://dicd-team-devinfra-cd--relay/deployment-assets/${REVISION}/${NAME}/linux/amd64/release-name" .
+RELEASE=$(< ./release-name)
+echo "Creating a new release and deploy for ${RELEASE} in Sentry..."
+sentry-cli releases new "${RELEASE}"
+# NOTE: Disabled until the repository is properly configured in Sentry
+# sentry-cli releases set-commits "${RELEASE}" --commit "${GITHUB_PROJECT}@${REVISION}"
+sentry-cli releases deploys "${RELEASE}" new -e "${ENVIRONMENT}"
+sentry-cli releases finalize "${RELEASE}"
+echo 'Deploy created.'

@@ -1,0 +1,20 @@
+[package]
+name = "process-event"
+version = "0.1.0"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Process a Sentry event payload"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+edition = "2024"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+relay-event-schema = { workspace = true }
+relay-pii = { workspace = true }
+relay-protocol = { workspace = true }
+relay-event-normalization = { workspace = true }
+serde_json = { workspace = true }

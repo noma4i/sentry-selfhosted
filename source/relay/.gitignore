@@ -1,0 +1,35 @@
+# Rust
+**/*.rs.bk
+target
+**/fuzz/corpus
+**/fuzz/artifacts
+**/fuzz/coverage
+**/fuzz/*.html
+*.pending-snap
+
+# Python
+.venv/
+.pytest_cache
+*.pyc
+
+# Runtime files
+/.relay/
+
+# Editors
+/.idea/
+/*.sln
+.DS_Store
+
+# NPM utilities for building docs
+/node_modules/
+package-lock.json
+
+# Jsonnet-bundler
+gocd/templates/vendor/
+gocd/generated-pipelines/
+
+# Relay credentials file
+credentials.json
+
+# Internal code
+relay-prosperoconv/src/**

@@ -1,0 +1,57 @@
+version: v1
+kind: readable_storage
+name: generic_org_metrics_counters
+storage:
+  key: generic_org_metrics_counters
+  set_key: generic_metrics_counters
+readiness_state: complete
+schema:
+  columns:
+    [
+      { name: org_id, type: UInt, args: { size: 64 } },
+      { name: project_id, type: UInt, args: { size: 64 } },
+      { name: metric_id, type: UInt, args: { size: 64 } },
+      { name: granularity, type: UInt, args: { size: 8 } },
+      { name: timestamp, type: DateTime },
+      {
+        name: tags,
+        type: Nested,
+        args:
+          {
+            subcolumns:
+              [
+                { name: key, type: UInt, args: { size: 64 } },
+                { name: raw_value, type: String },
+              ],
+          },
+      },
+
+    ]
+  local_table_name: generic_metric_counters_aggregated_local
+  dist_table_name: generic_metric_counters_aggregated_dist
+
+allocation_policies:
+  - name: ConcurrentRateLimitAllocationPolicy
+    args:
+      required_tenant_types:
+        - organization_id
+        - referrer
+        - project_id
+      default_config_overrides:
+        is_enforced: 0
+  - name: BytesScannedWindowAllocationPolicy
+    args:
+      required_tenant_types:
+        - organization_id
+        - referrer
+      default_config_overrides:
+        is_enforced: 1
+        throttled_thread_number: 1
+        org_limit_bytes_scanned: 100000
+  - name: ReferrerGuardRailPolicy
+    args:
+      required_tenant_types:
+        - referrer
+      default_config_overrides:
+        is_enforced: 0
+        is_active: 0

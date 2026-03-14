@@ -1,0 +1,160 @@
+local utils = import '../libs/utils.libsonnet';
+local gocdtasks = import 'github.com/getsentry/gocd-jsonnet/libs/gocd-tasks.libsonnet';
+
+// List of datadog monitors to check during the soak time in the different regions
+local soak_monitors = {
+  // (The Number of Pending Projects is High), (Service Queues are Backlogging), (CrashLoopBackoff Count is High)
+  s4s: '14146876 154096678 237863001',
+  // (The Number of Pending Projects is High), (Service Queues are Backlogging), (CrashLoopBackoff Count is High)
+  us: '14146876 154096671 237862997',
+  // (The Number of Pending Projects is High)
+  default: '14146876',
+};
+
+local sentry_deploy_vars(region) = {
+  SENTRY_REGION: region,
+  SENTRY_SINGLE_TENANT: 'false',
+  SENTRY_BASE: 'https://sentry.io/api/0',
+  SENTRY_AUTH_TOKEN: if region == 's4s2' then '{{SECRET:[devinfra-sentryst][token]}}' else '{{SECRET:[devinfra-temp][relay_sentry_s4s2_auth_token]}}',
+  // Sentry projects to check for errors <project_id>:<project_slug>:<service>
+  SENTRY_PROJECTS: if region == 's4s2' then '4510747659468800:relay:relay' else '4510703820210272:relay:relay',
+};
+
+local sentry_create_env_vars(region) = {
+  SENTRY_ORG: if region == 's4s2' then 'sentry-st' else 'sentry-s4s2',
+  SENTRY_PROJECT: 'relay',
+  SENTRY_URL: 'https://sentry.io',
+  // Temporary; self-service encrypted secrets aren't implemented yet.
+  // This should really be rotated to an internal integration token.
+  SENTRY_AUTH_TOKEN: if region == 's4s2' then '{{SECRET:[devinfra-sentryst][token]}}' else '{{SECRET:[devinfra-temp][relay_sentry_s4s2_auth_token]}}',
+};
+
+// The purpose of this stage is to let the deployment soak for a while and
+// detect any issues that might have been introduced.
+local soak_time(region) =
+  if region == 's4s' || region == 'us' then
+    [
+      {
+        'soak-time': {
+          jobs: {
+            soak: {
+              environment_variables: {
+                GOCD_ACCESS_TOKEN: '{{SECRET:[devinfra][gocd_access_token]}}',
+                DATADOG_API_KEY: '{{SECRET:[devinfra][sentry_datadog_api_key]}}',
+                DATADOG_APP_KEY: '{{SECRET:[devinfra][sentry_datadog_app_key]}}',
+                // Datadog monitor IDs for the soak time
+                DATADOG_MONITOR_IDS: if std.objectHas(soak_monitors, region) then soak_monitors[region] else soak_monitors.default,
+                // TODO: Set a proper error limit
+                ERROR_LIMIT: 500,
+                PAUSE_MESSAGE: 'Detecting issues in the deployment. Pausing pipeline.',
+                // TODO: Switch dry run to false once we're confident in the soak time
+                DRY_RUN: 'true',
+              } + sentry_deploy_vars(region),
+              elastic_profile_id: 'relay',
+              tasks: [
+                gocdtasks.script(importstr '../bash/wait-soak.sh'),
+                gocdtasks.script(importstr '../bash/check-sentry-errors.sh'),
+                gocdtasks.script(importstr '../bash/check-sentry-new-errors.sh'),
+                gocdtasks.script(importstr '../bash/check-datadog-status.sh'),
+                utils.pause_on_failure(),
+              ],
+            },
+          },
+        },
+      },
+    ]
+  else
+    [];
+
+// The purpose of this stage is to deploy a canary for a given region and wait for a few minutes
+// to see if there are any issues.
+local deploy_canary(region) =
+  if region == 'us' then
+    [
+      {
+        'deploy-canary': {
+          fetch_materials: true,
+          jobs: {
+            create_sentry_release: {
+              environment_variables: sentry_create_env_vars(region),
+              timeout: 1200,
+              elastic_profile_id: 'relay',
+              tasks: [
+                gocdtasks.script(importstr '../bash/create-sentry-relay-release.sh'),
+              ],
+            },
+            deploy: {
+              timeout: 1200,
+              elastic_profile_id: 'relay',
+              environment_variables: {
+                GOCD_ACCESS_TOKEN: '{{SECRET:[devinfra][gocd_access_token]}}',
+                DATADOG_API_KEY: '{{SECRET:[devinfra][sentry_datadog_api_key]}}',
+                DATADOG_APP_KEY: '{{SECRET:[devinfra][sentry_datadog_app_key]}}',
+                // Datadog monitor IDs for the canary deployment
+                DATADOG_MONITOR_IDS: '14146876 154096671 237862997',
+                // TODO: Set a proper error limit
+                ERROR_LIMIT: 500,
+                PAUSE_MESSAGE: 'Pausing pipeline due to canary failure.',
+                // TODO: Switch dry run to false once we're confident in the canary
+                DRY_RUN: 'true',
+              } + sentry_deploy_vars(region),
+              tasks: [
+                gocdtasks.script(importstr '../bash/deploy-processing-canary.sh'),
+                gocdtasks.script(importstr '../bash/wait-canary.sh'),
+                gocdtasks.script(importstr '../bash/check-sentry-errors.sh'),
+                gocdtasks.script(importstr '../bash/check-sentry-new-errors.sh'),
+                gocdtasks.script(importstr '../bash/check-datadog-status.sh'),
+                utils.pause_on_failure(),
+              ],
+            },
+          },
+        },
+      },
+    ]
+  else
+    [];
+
+// The purpose of this stage is to deploy to production
+local deploy_primary(region) = [
+  {
+    'deploy-primary': {
+      fetch_materials: true,
+      jobs: {
+        create_sentry_release: {
+          environment_variables: sentry_create_env_vars(region),
+          timeout: 1200,
+          elastic_profile_id: 'relay',
+          tasks: [
+            gocdtasks.script(importstr '../bash/create-sentry-relay-release.sh'),
+          ],
+        },
+        deploy: {
+          timeout: 1200,
+          elastic_profile_id: 'relay',
+          tasks: [
+            gocdtasks.script(importstr '../bash/deploy-processing.sh'),
+          ],
+        },
+      },
+    },
+  },
+];
+
+
+function(region) {
+  environment_variables: {
+    SENTRY_REGION: region,
+    SKIP_CANARY_CHECKS: false,
+  },
+  group: 'relay-next',
+  lock_behavior: 'unlockWhenFinished',
+  materials: {
+    relay_repo: {
+      git: 'git@github.com:getsentry/relay.git',
+      shallow_clone: true,
+      branch: 'master',
+      destination: 'relay',
+    },
+  },
+  stages: utils.github_checks() + deploy_canary(region) + deploy_primary(region) + soak_time(region),
+}

@@ -1,0 +1,143 @@
+---
+source: relay-pii/src/convert.rs
+expression: data
+---
+{
+  "user": {
+    "ip_address": null,
+    "username": "[ip]",
+    "data": {
+      "a_password_here": "hello",
+      "apiKey": "secret_key",
+      "api_key": "secret_key",
+      "foo": "bar",
+      "otp": "otp_code",
+      "password": "hello",
+      "the_secret": "hello",
+      "two-factor": "otp_code",
+      "two_factor": "otp_code"
+    }
+  },
+  "breadcrumbs": {
+    "values": [
+      {
+        "message": "[ip]",
+        "data": {
+          "test_data": "[ip]"
+        }
+      }
+    ]
+  },
+  "sdk": {
+    "client_ip": null
+  },
+  "spans": [
+    {
+      "sentry_tags": {
+        "user.ip": null
+      }
+    }
+  ],
+  "_meta": {
+    "breadcrumbs": {
+      "values": {
+        "0": {
+          "data": {
+            "test_data": {
+              "": {
+                "rem": [
+                  [
+                    "@ip:replace",
+                    "s",
+                    0,
+                    4
+                  ]
+                ],
+                "len": 13
+              }
+            }
+          },
+          "message": {
+            "": {
+              "rem": [
+                [
+                  "@ip:replace",
+                  "s",
+                  0,
+                  4
+                ]
+              ],
+              "len": 13
+            }
+          }
+        }
+      }
+    },
+    "sdk": {
+      "client_ip": {
+        "": {
+          "err": [
+            [
+              "invalid_data",
+              {
+                "reason": "expected an ip address"
+              }
+            ]
+          ],
+          "val": "should also be stripped"
+        }
+      }
+    },
+    "spans": {
+      "0": {
+        "sentry_tags": {
+          "user.ip": {
+            "": {
+              "rem": [
+                [
+                  "@ip:replace",
+                  "s",
+                  0,
+                  4
+                ],
+                [
+                  "@anything:remove",
+                  "x"
+                ]
+              ],
+              "len": 13
+            }
+          }
+        }
+      }
+    },
+    "user": {
+      "ip_address": {
+        "": {
+          "err": [
+            [
+              "invalid_data",
+              {
+                "reason": "expected an ip address"
+              }
+            ]
+          ],
+          "val": "should be stripped despite lacking ip address"
+        }
+      },
+      "username": {
+        "": {
+          "rem": [
+            [
+              "@ip:replace",
+              "s",
+              0,
+              4
+            ]
+          ],
+          "len": 13
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+---
+source: relay-pii/src/convert.rs
+expression: data
+---
+{
+  "extra": {
+    "foo": "foo 'redis://redis:[Filtered]@localhost:6379/0' bar"
+  },
+  "_meta": {
+    "extra": {
+      "foo": {
+        "": {
+          "rem": [
+            [
+              "@urlauth:legacy",
+              "s",
+              19,
+              29
+            ]
+          ],
+          "len": 44
+        }
+      }
+    }
+  }
+}

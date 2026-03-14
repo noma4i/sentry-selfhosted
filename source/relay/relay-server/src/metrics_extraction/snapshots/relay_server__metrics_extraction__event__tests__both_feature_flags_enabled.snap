@@ -1,0 +1,1356 @@
+---
+source: relay-server/src/metrics_extraction/event.rs
+expression: metrics.project_metrics
+---
+[
+    Bucket {
+        timestamp: UnixTimestamp(1619420400),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1695255152),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1695255136),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1694732408),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1694732408),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1597976302),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1694732408),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1694732408),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1702474613),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1702474613),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1702474613),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1702474613),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1702474613),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1702474613),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+    Bucket {
+        timestamp: UnixTimestamp(1702474613),
+        width: 0,
+        name: MetricName(
+            "c:spans/usage@none",
+        ),
+        value: Counter(
+            1.0,
+        ),
+        tags: {},
+        metadata: BucketMetadata {
+            merges: 1,
+            received_at: Some(
+                UnixTimestamp(0),
+            ),
+            extracted_from_indexed: false,
+        },
+    },
+]

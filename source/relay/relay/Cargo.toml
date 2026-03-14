@@ -1,0 +1,35 @@
+[package]
+name = "relay"
+authors = ["Sentry <oss@sentry.io>"]
+description = "The Relay binary, a proxy server for Sentry"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[features]
+default = []
+processing = ["relay-server/processing", "dep:relay-kafka"]
+crash-handler = ["relay-log/crash-handler"]
+
+[lints]
+workspace = true
+
+# Direct dependencies of the main application in `src/`
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["env", "wrap_help"] }
+clap_complete = { workspace = true }
+dialoguer = { workspace = true }
+hostname = { workspace = true }
+http = { workspace = true }
+relay-config = { workspace = true }
+relay-log = { workspace = true, features = ["init"] }
+relay-server = { workspace = true }
+relay-statsd = { workspace = true }
+relay-kafka = { workspace = true, optional = true }
+uuid = { workspace = true }
+reqwest = { workspace = true, features = ["gzip", "native-tls-vendored"] }
+mimalloc = { workspace = true, features = ["v3", "override", "debug_in_debug"] }

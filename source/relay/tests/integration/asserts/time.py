@@ -1,0 +1,148 @@
+from datetime import timedelta, datetime, timezone
+from enum import StrEnum
+
+
+class Resolution(StrEnum):
+    Seconds = "s"
+    MilliSeconds = "ms"
+    MicroSeconds = "us"
+    NanoSeconds = "ns"
+
+
+def _to_datetime(v, resolution=Resolution.Seconds):
+    # Sometimes numbers are hidden as strings, make sure resolution changes work here.
+    if isinstance(v, str):
+        try:
+            v = int(v)
+        except ValueError:
+            try:
+                v = float(v)
+            except ValueError:
+                pass
+
+    if isinstance(v, datetime):
+        return v
+    elif isinstance(v, (int, float)):
+        resolution = Resolution(resolution)
+        to_secs_d = {
+            Resolution.Seconds: 1,
+            Resolution.MilliSeconds: 1_000,
+            Resolution.MicroSeconds: 1_000_000,
+            Resolution.NanoSeconds: 1_000_000_000,
+        }[resolution]
+        return datetime.fromtimestamp(v / to_secs_d, timezone.utc)
+    elif isinstance(v, str):
+        return datetime.fromisoformat(v)
+    else:
+        assert False, f"cannot convert {v} to datetime"
+
+
+def _truncate(dt, resolution=None):
+    if resolution is None:
+        return dt
+
+    return {
+        Resolution.Seconds: lambda x: x.replace(microsecond=0),
+        Resolution.MilliSeconds: lambda x: x.replace(
+            microsecond=int(x.microsecond / 1000) * 1000
+        ),
+        Resolution.MicroSeconds: lambda x: x,
+        # Resolution of the Python datetime itself is just in microseconds
+        Resolution.NanoSeconds: lambda x: x,
+    }[resolution](dt)
+
+
+def _resolution_to_timedelta(resolution):
+    if resolution is None:
+        return timedelta(microseconds=1)
+
+    return {
+        Resolution.Seconds: timedelta(seconds=1),
+        Resolution.MilliSeconds: timedelta(milliseconds=1),
+        Resolution.MicroSeconds: timedelta(microseconds=1),
+        # Resolution of the Python datetime itself is just in microseconds
+        Resolution.NanoSeconds: timedelta(microseconds=1),
+    }[resolution]
+
+
+def _format_resolution(dt: datetime, resolution):
+    match resolution:
+        case Resolution.Seconds:
+            return str(dt.timestamp())
+        case Resolution.MilliSeconds:
+            return str(dt.timestamp() * 1_000)
+        case Resolution.MicroSeconds:
+            return str(int(dt.timestamp() * 1_000_000))
+        case Resolution.NanoSeconds:
+            # Python datetime does not support nanosecond precision, convert to micros,
+            # then integer, then convert to nanos to avoid floating point inaccuracies.
+            return str(int(dt.timestamp() * 1_000_000) * 1_000)
+
+
+class _WithinBounds:
+    def __init__(
+        self,
+        lower_bound,
+        upper_bound,
+        expect_resolution=Resolution.Seconds,
+        precision=None,
+    ):
+        self._lower_bound = _truncate(lower_bound, precision)
+        self._upper_bound = _truncate(
+            upper_bound, precision
+        ) + _resolution_to_timedelta(precision)
+        self._expect_resolution = expect_resolution
+
+    def __eq__(self, other):
+        other = _to_datetime(other, resolution=self._expect_resolution)
+        return self._lower_bound <= other <= self._upper_bound
+
+    def __str__(self):
+        if self._expect_resolution is None:
+            return f"{self._lower_bound} <= x <= {self._upper_bound}"
+
+        lower = _format_resolution(self._lower_bound, self._expect_resolution)
+        upper = _format_resolution(self._upper_bound, self._expect_resolution)
+        return f"{self._lower_bound} ({lower}) <= x <= {self._upper_bound} ({upper})"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
+def time_is(time, **kwargs):
+    """
+    Assertion helper which compares the actual time against the expected time.
+    """
+    return time_within(time, time, **kwargs)
+
+
+def time_after(lower_bound, max_in_future=timedelta(minutes=1), **kwargs):
+    """
+    Assertion helper which ensures the actual time is after the specified time.
+    """
+    upper_bound = datetime.now(tz=timezone.utc) + max_in_future
+    return time_within(lower_bound, upper_bound, **kwargs)
+
+
+def time_within(lower_bound, upper_bound=None, **kwargs):
+    """
+    Assertion helper which ensures the actual time is between the specified lower and upper bound.
+
+    If no upper bound is specified, the current time is used as an upper bound.
+    """
+    lower_bound = _to_datetime(lower_bound)
+    upper_bound = (
+        _to_datetime(upper_bound)
+        if upper_bound is not None
+        else datetime.now(tz=timezone.utc)
+    )
+    assert lower_bound <= upper_bound, f"{lower_bound} <= {upper_bound}"
+    return _WithinBounds(lower_bound, upper_bound, **kwargs)
+
+
+def time_within_delta(time=None, delta=timedelta(seconds=30), **kwargs):
+    """
+    Assertion helper which ensures the actual time is between the specified time and a delta.
+    """
+    time = _to_datetime(time) if time is not None else datetime.now(tz=timezone.utc)
+    return _WithinBounds(time - delta, time + delta, **kwargs)

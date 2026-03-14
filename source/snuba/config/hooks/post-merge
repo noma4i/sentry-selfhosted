@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+## vim: shiftwidth=2
+
+red="$(tput setaf 1)"
+bold="$(tput bold)"
+reset="$(tput sgr0)"
+
+files_changed_upstream="$(mktemp)"
+trap "rm -f ${files_changed_upstream}" EXIT
+
+git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD > "$files_changed_upstream"
+
+command=
+
+if grep -E --quiet 'migrations/groups.py' "$files_changed_upstream"; then
+  command="make apply-migrations"
+fi
+
+if grep -E --quiet 'uv.lock' "$files_changed_upstream"; then
+  command="devenv sync"
+fi
+
+if grep -E --quiet 'rust_snuba/' "$files_changed_upstream"; then
+  command="make install-rs-dev"
+fi
+
+if [ -n "$command" ]; then
+  cat <<EOF
+
+[${red}${bold}!!!${reset}] ${red} It looks like some dependencies have changed that will require your intervention. Run the following to update:${reset}
+
+    ${red}${bold}${command}${reset}
+
+EOF
+
+  if [ "$SENTRY_POST_MERGE_AUTO_UPDATE" ]; then
+    echo "${yellow}Automatically running update command because SENTRY_POST_MERGE_AUTO_UPDATE is set.${reset}"
+    $commmand
+  else
+    echo "${yellow}If you want these commands to be executed automatically after pulling code, you can export the SENTRY_POST_MERGE_AUTO_UPDATE variable.${reset}"
+  fi
+fi

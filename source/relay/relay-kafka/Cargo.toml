@@ -1,0 +1,42 @@
+[package]
+name = "relay-kafka"
+authors = ["Sentry <oss@sentry.io>"]
+description = "Kafka related functionality for Relay"
+homepage = "https://getsentry.github.io/relay/"
+repository = "https://github.com/getsentry/relay"
+version = "26.3.1"
+edition = "2024"
+license-file = "../LICENSE.md"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+rdkafka = { workspace = true, optional = true, features = ["tracing", "ssl", "libz-static"] }
+rdkafka-sys = { workspace = true, optional = true }
+relay-log = { workspace = true, optional = true }
+relay-statsd = { workspace = true, optional = true }
+rmp-serde = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true }
+sentry-kafka-schemas = { workspace = true, default-features = false }
+parking_lot = { workspace = true }
+hashbrown = { workspace = true }
+hash32 = { workspace = true }
+
+[dev-dependencies]
+serde_yaml = { workspace = true }
+insta = { workspace = true }
+
+[features]
+default = []
+producer = [
+  "dep:rdkafka",
+  "dep:relay-log",
+  "dep:relay-statsd",
+  "dep:rmp-serde",
+  "dep:serde_json",
+  "rdkafka-sys/cmake-build",
+]

@@ -1,0 +1,13 @@
+# FFI
+sentry_relay/_lowlevel*
+
+# Wheels
+dist
+build
+*.egg-info
+.eggs
+
+# sdist
+version.txt
+rustsrc.zip
+MANIFEST

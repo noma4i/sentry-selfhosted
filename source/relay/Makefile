@@ -1,0 +1,168 @@
+SHELL=/bin/bash
+export RELAY_FEATURES :=
+RELAY_CARGO_ARGS ?= ${CARGO_ARGS}
+
+all: check test ## run all checks and tests
+.PHONY: all
+
+check: doc style lint ## run the lints and check the code style for rust and python code
+.PHONY: check
+
+clean: ## remove python virtual environment and delete cached rust files together with target folder
+	cargo clean
+	rm -rf .venv
+.PHONY: clean
+
+# Builds
+
+build: setup-git ## build relay with all features enabled without debug info
+	cargo +stable build --all-features ${RELAY_CARGO_ARGS}
+.PHONY: build
+
+release: setup-git ## build production binary of the relay with debug info
+	@cd relay && cargo +stable build --release $(if ${RELAY_FEATURES}, --features ${RELAY_FEATURES}) ${RELAY_CARGO_ARGS}
+.PHONY: release
+
+build-linux-release: setup-git ## build linux release of the relay
+	cd relay && cargo build --release $(if ${RELAY_FEATURES}, --features ${RELAY_FEATURES}) ${RELAY_CARGO_ARGS}
+	objcopy --only-keep-debug target/${TARGET}/release/relay{,.debug}
+	objcopy --strip-debug --strip-unneeded target/${TARGET}/release/relay
+	objcopy --add-gnu-debuglink target/${TARGET}/release/relay{.debug,}
+.PHONY: build-linux-release
+
+collect-source-bundle: setup-git ## copy the built relay binary to current folder and collects debug bundles
+	mv target/${TARGET}/release/relay ./relay-bin
+	zip relay-debug.zip target/${TARGET}/release/relay.debug
+	sentry-cli --version
+	sentry-cli difutil bundle-sources target/${TARGET}/release/relay.debug
+	mv target/${TARGET}/release/relay.src.zip ./relay.src.zip
+.PHONY: collect-source-bundle
+
+build-release-with-bundles: build-linux-release collect-source-bundle
+.PHONY: build-relase-with-bundles
+
+sdist: setup-git setup-venv ## create a sdist of the Python library
+	cd py && ../.venv/bin/python setup.py sdist
+.PHONY: sdist
+
+wheel: setup-git setup-venv ## build a wheel of the Python library
+	cd py && ../.venv/bin/python setup.py bdist_wheel
+.PHONY: wheel
+
+wheel-manylinux: setup-git ## build manylinux 2014 compatible wheels. This will build docker image for the requested architecture and cross compile the code inside
+	@scripts/docker-manylinux.sh
+.PHONY: wheel-manylinux
+
+# Tests
+
+test: test-rust-all test-python test-integration ## run all unit and integration tests
+.PHONY: test
+
+test-rust: setup-git ## run tests for Rust code with default features enabled
+	cargo test --workspace ${RELAY_CARGO_ARGS}
+.PHONY: test-rust
+
+test-rust-all: setup-git ## run tests for Rust code with all the features enabled
+	cargo test --workspace --all-features ${RELAY_CARGO_ARGS}
+.PHONY: test-rust-all
+
+test-python: setup-git setup-venv ## run tests for Python code
+	.venv/bin/pytest -v py
+.PHONY: test-python
+
+PYTEST_N ?= auto
+test-integration: build setup-venv ## run integration tests
+	.venv/bin/pytest tests -n $(PYTEST_N) -v
+.PHONY: test-integration
+
+# Documentation
+
+doc: doc-rust ## generate all API docs
+.PHONY: doc
+
+doc-rust: setup-git ## generate API docs for Rust code
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --document-private-items ${RELAY_CARGO_ARGS}
+.PHONY: doc-rust
+
+# Style checking
+
+style: style-rust ## check code style
+.PHONY: style
+
+style-rust: ## check Rust code style
+	@rustup component add rustfmt --toolchain stable 2> /dev/null
+	cargo +stable fmt --all -- --check
+.PHONY: style-rust
+
+# Linting
+
+lint: lint-rust lint-python ## run lint on Python and Rust code
+.PHONY: lint
+
+lint-rust: setup-git ## run lint on Rust code using clippy
+	@rustup component add clippy --toolchain stable 2> /dev/null
+	cargo +stable clippy --workspace --all-targets --all-features --no-deps -- -D warnings
+.PHONY: lint-rust
+
+lint-python: ## run lint on Python code using flake8
+	.venv/bin/pre-commit run flake8 -a
+	.venv/bin/pre-commit run mypy -a
+.PHONY: lint-python
+
+lint-rust-beta: setup-git ## run lint on Rust using clippy and beta toolchain
+	@rustup toolchain install beta 2>/dev/null
+	@rustup component add clippy --toolchain beta 2> /dev/null
+	cargo +beta clippy --workspace --all-targets --all-features --no-deps -- -D warnings
+.PHONY: lint-rust-beta
+
+# Formatting
+
+format: format-rust format-python ## format all the Rust and Python code
+.PHONY: format
+
+format-rust: ## format the Rust code
+	@rustup component add rustfmt --toolchain stable 2> /dev/null
+	cargo +stable fmt --all
+.PHONY: format-rust
+
+format-python: ## format the Python code
+	.venv/bin/pre-commit run black -a
+.PHONY: format-python
+
+# Development
+
+setup: setup-git setup-venv ## run setup tasks to create and configure development environment
+.PHONY: setup
+
+init-submodules:
+	@git submodule update --init --recursive
+.PHONY: init-submodules
+
+setup-git: init-submodules ## make sure all git configured and all the submodules are fetched
+.PHONY: setup-git
+
+setup-venv: uv.lock ## create a Python virtual environment with development requirements installed
+	devenv sync
+	RELAY_DEBUG=1 uv pip install -v -e py
+.PHONY: setup-venv
+
+clean-target-dir:
+	if [ "$$(du -s target/ | cut -f 1)" -gt 4000000 ]; then \
+		rm -rf target/; \
+	fi
+.PHONY: clean-target-dir
+
+help: ## this help
+	@ awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m\n\nTargets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-10s\033[0m\t%s\n", $$1, $$2 }' $(MAKEFILE_LIST) | column -s$$'\t' -t
+.PHONY: help
+
+gocd: ## Build GoCD pipelines
+	@ rm -rf ./gocd/generated-pipelines
+	@ mkdir -p ./gocd/generated-pipelines
+	@ cd ./gocd/templates && jb install && jb update
+	@ find . -type f \( -name '*.libsonnet' -o -name '*.jsonnet' \) -print0 | xargs -n 1 -0 jsonnetfmt -i
+	@ find . -type f \( -name '*.libsonnet' -o -name '*.jsonnet' \) -print0 | xargs -n 1 -0 jsonnet-lint -J ./gocd/templates/vendor
+	@ cd ./gocd/templates && jsonnet --ext-code output-files=true -J vendor -m ../generated-pipelines ./pops.jsonnet
+	@ cd ./gocd/templates && jsonnet --ext-code output-files=true -J vendor -m ../generated-pipelines ./processing.jsonnet
+	@ cd ./gocd/generated-pipelines && find . -type f \( -name '*.yaml' \) -print0 | xargs -n 1 -0 yq -p json -o yaml -i
+.PHONY: gocd

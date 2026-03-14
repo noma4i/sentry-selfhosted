@@ -1,0 +1,193 @@
+//! A new experimental way to structure Relay's processing pipeline.
+//!
+//! The idea is to slowly move processing steps from the original
+//! [`processor`](crate::services::processor) module into this module.
+//! This is where all the product processing logic should be located or called from.
+//!
+//! The processor service, will then do its actual work using the processing logic defined here.
+
+use relay_config::Config;
+use relay_dynamic_config::GlobalConfig;
+use relay_quotas::RateLimits;
+use relay_sampling::evaluation::ReservoirCounters;
+
+use crate::managed::{Counted, Managed, ManagedEnvelope, Rejected};
+use crate::metrics_extraction::transactions::ExtractedMetrics;
+use crate::services::projects::project::ProjectInfo;
+
+mod common;
+mod forward;
+mod limits;
+
+pub use self::common::*;
+pub use self::forward::*;
+pub use self::limits::*;
+
+pub mod attachments;
+pub mod check_ins;
+pub mod client_reports;
+pub mod errors;
+pub mod logs;
+pub mod profile_chunks;
+pub mod replays;
+pub mod sessions;
+pub mod spans;
+pub mod trace_attachments;
+pub mod trace_metrics;
+pub mod transactions;
+pub mod user_reports;
+pub mod utils;
+
+/// A processor, for an arbitrary unit of work extracted from an envelope.
+///
+/// The processor takes items from an envelope, to process it.
+/// To fully process an envelope, multiple processor may need to take items from the same envelope.
+///
+/// Event based envelopes should only be handled by a single processor, as the protocol
+/// defines all items in an event based envelope to relate to the envelope.
+pub trait Processor {
+    /// A unit of work, the processor can process.
+    type Input: Counted;
+    /// The result after processing a [`Self::Input`].
+    type Output: Forward;
+    /// The error returned by [`Self::process`].
+    type Error: std::error::Error + 'static;
+
+    /// Extracts a [`Self::Input`] from a [`ManagedEnvelope`].
+    ///
+    /// This is infallible, if a processor wants to report an error,
+    /// it should return a [`Self::Input`] which later, can produce an error when being processed.
+    ///
+    /// Returns `None` if nothing in the envelope concerns this processor.
+    fn prepare_envelope(&self, envelope: &mut ManagedEnvelope) -> Option<Managed<Self::Input>>;
+
+    /// Processes a [`Self::Input`].
+    async fn process(
+        &self,
+        work: Managed<Self::Input>,
+        ctx: Context<'_>,
+    ) -> Result<Output<Self::Output>, Rejected<Self::Error>>;
+}
+
+/// Read-only context for processing.
+#[derive(Copy, Clone, Debug)]
+pub struct Context<'a> {
+    /// The Relay configuration.
+    pub config: &'a Config,
+    /// A view of the currently active global configuration.
+    pub global_config: &'a GlobalConfig,
+    /// Project configuration associated with the unit of work.
+    pub project_info: &'a ProjectInfo,
+    /// Project configuration associated with the root of the trace of the unit of work.
+    pub sampling_project_info: Option<&'a ProjectInfo>,
+    /// Cached rate limits associated with the unit of work.
+    ///
+    /// The caller needs to ensure the rate limits are not yet expired.
+    pub rate_limits: &'a RateLimits,
+
+    /// Counters used for getting more samples for a project on-demand.
+    ///
+    /// Reservoir counters are a legacy feature and will be removed in the near future.
+    pub reservoir_counters: &'a ReservoirCounters,
+}
+
+impl<'a> Context<'a> {
+    /// Returns `true` if Relay has processing enabled.
+    ///
+    /// Processing indicates, this Relay is the final Relay processing this item.
+    pub fn is_processing(&self) -> bool {
+        cfg!(feature = "processing") && self.config.processing_enabled()
+    }
+
+    /// Checks on-off feature flags for envelope items, like profiles and spans.
+    ///
+    /// It checks for the presence of the passed feature flag, but does not filter items
+    /// when there is no full project config available. This is the case in stat and proxy
+    /// Relays.
+    pub fn should_filter(&self, feature: relay_dynamic_config::Feature) -> bool {
+        use relay_config::RelayMode::*;
+
+        match self.config.relay_mode() {
+            Proxy => false,
+            Managed => !self.project_info.has_feature(feature),
+        }
+    }
+
+    /// Creates a [`ForwardContext`] from this [`Context`].
+    pub fn to_forward(self) -> ForwardContext<'a> {
+        ForwardContext {
+            config: self.config,
+            global_config: self.global_config,
+            project_info: self.project_info,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Context<'static> {
+    /// Returns a [`Context`] with default values for testing.
+    pub fn for_test() -> Self {
+        use std::sync::LazyLock;
+
+        static CONFIG: LazyLock<Config> = LazyLock::new(Default::default);
+        static GLOBAL_CONFIG: LazyLock<GlobalConfig> = LazyLock::new(Default::default);
+        static PROJECT_INFO: LazyLock<ProjectInfo> = LazyLock::new(Default::default);
+        static RATE_LIMITS: LazyLock<RateLimits> = LazyLock::new(Default::default);
+        static RESERVOIR_COUNTERS: LazyLock<ReservoirCounters> = LazyLock::new(Default::default);
+
+        Self {
+            config: &CONFIG,
+            global_config: &GLOBAL_CONFIG,
+            project_info: &PROJECT_INFO,
+            sampling_project_info: None,
+            rate_limits: &RATE_LIMITS,
+            reservoir_counters: &RESERVOIR_COUNTERS,
+        }
+    }
+}
+
+/// The main processing output and all of its by products.
+#[derive(Debug)]
+pub struct Output<T> {
+    /// The main output of a [`Processor`].
+    pub main: Option<T>,
+    /// Metric by products.
+    pub metrics: Option<Managed<ExtractedMetrics>>,
+}
+
+impl<T> Output<T> {
+    /// Creates a new output with just a main output.
+    pub fn just(main: T) -> Self {
+        Self {
+            main: Some(main),
+            metrics: None,
+        }
+    }
+
+    /// Creates a new output just containing metrics.
+    pub fn metrics(metrics: Managed<ExtractedMetrics>) -> Self {
+        Self {
+            main: None,
+            metrics: Some(metrics),
+        }
+    }
+
+    /// Creates an new empty output.
+    pub fn empty() -> Self {
+        Self {
+            main: None,
+            metrics: None,
+        }
+    }
+
+    /// Maps an `Output<T>` to `Output<S>` by applying a function to [`Self::main`].
+    pub fn map<F, S>(self, f: F) -> Output<S>
+    where
+        F: FnOnce(T) -> S,
+    {
+        Output {
+            main: self.main.map(f),
+            metrics: self.metrics,
+        }
+    }
+}
