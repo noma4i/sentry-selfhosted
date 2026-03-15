@@ -1,0 +1,459 @@
+---
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Get changed files
+        id: changes
+        uses: dorny/paths-filter@0bc4621a3135347011ad047f9ecf449bf72ce2bd # v3.0.0
+        with:
+          list-files: json
+          filters: |
+            all:
+              - added|modified: '**/*'
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: clippy, rustfmt
+
+      - uses: swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+
+      - name: Run Rustfmt
+        run: make style
+
+      - name: Run Clippy
+        run: make lint
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --all-packages --all-groups --frozen --active
+
+      - uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cache/pre-commit
+          key: cache-epoch-1|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml', 'uv.lock') }}
+
+      - name: Install pre-commit
+        run: pre-commit install-hooks
+
+      - name: Run pre-commit
+        run: |
+          jq '.[]' --raw-output <<< '${{steps.changes.outputs.all_files}}' |
+            xargs pre-commit run --files
+
+  python-client-lint:
+    name: Python Client Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Get changed Python client files
+        id: changes
+        uses: dorny/paths-filter@0bc4621a3135347011ad047f9ecf449bf72ce2bd # v3.0.0
+        with:
+          list-files: json
+          filters: |
+            python:
+              - added|modified: 'clients/python/**'
+
+      - name: Skip if no Python client changes
+        if: steps.changes.outputs.python != 'true'
+        run: echo "No Python client files changed, skipping pre-commit checks"
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        if: steps.changes.outputs.python == 'true'
+        with:
+          version: '0.8.2'
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        if: steps.changes.outputs.python == 'true'
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --all-packages --all-groups --frozen --active
+
+      - uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        if: steps.changes.outputs.python == 'true'
+        with:
+          path: ~/.cache/pre-commit
+          key: cache-epoch-1|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml', 'uv.lock') }}
+
+      - name: Install pre-commit
+        if: steps.changes.outputs.python == 'true'
+        run: pre-commit install-hooks
+
+      - name: Run pre-commit on Python client files
+        if: steps.changes.outputs.python == 'true'
+        run: |
+          jq '.[]' --raw-output <<< '${{steps.changes.outputs.python_files}}' |
+            xargs pre-commit run --files
+
+  python-client-test:
+    name: Python Client Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Get changed Python client files
+        id: changes
+        uses: dorny/paths-filter@0bc4621a3135347011ad047f9ecf449bf72ce2bd # v3.0.0
+        with:
+          filters: |
+            python:
+              - 'clients/python/**'
+
+      - name: Skip if no Python client changes
+        if: steps.changes.outputs.python != 'true'
+        run: echo "No Python client files changed, skipping tests"
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        if: steps.changes.outputs.python == 'true'
+        with:
+          version: '0.8.2'
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        if: steps.changes.outputs.python == 'true'
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --all-packages --all-groups --frozen --active
+
+      - name: Start devservices
+        if: steps.changes.outputs.python == 'true'
+        run: |
+          devservices up --mode=client
+
+      - name: Run pytest with coverage
+        if: steps.changes.outputs.python == 'true'
+        run: make python-test
+
+      - uses: codecov/codecov-action@0565863a31f2c772f9f0395002a31e3f06189574 # v5
+        if: steps.changes.outputs.python == 'true'
+        with:
+          files: clients/python/coverage.xml
+          slug: getsentry/taskbroker
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: python-client
+
+  test:
+    name: Tests (ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Start services
+        id: setup
+        run: |
+          devservices up
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - name: Run unit tests
+        run: |
+          make unit-test
+
+  coverage:
+    name: Coverage (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: taiki-e/install-action@a48a50298f98c47e46a957ae6f82c44cc4878e42 # v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Start services
+        run: devservices up
+
+      - name: Run coverage
+        run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+
+      - uses: codecov/codecov-action@0565863a31f2c772f9f0395002a31e3f06189574 # v5
+        with:
+          files: lcov.info
+          slug: getsentry/taskbroker
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  rebalance-integration-test:
+    name: Rebalance integration test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Run rebalance integration test
+        run: |
+          make test-rebalance
+
+  worker-processing-integration-test:
+    name: Worker processing integration test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Run worker processing integration test
+        run: |
+          make test-worker-processing
+
+  upkeep-retry-integration-test:
+    name: Upkeep retry integration test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Run upkeep retry integration test
+        run: |
+          make test-upkeep-retry
+
+  upkeep-expiry-integration-test:
+    name: Upkeep expiry integration test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Run upkeep expiry integration test
+        run: |
+          make test-upkeep-expiry
+
+  upkeep-delay-integration-test:
+    name: Upkeep delay integration test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Run upkeep delay integration test
+        run: |
+          make test-upkeep-delay
+
+  failed-tasks-integration-test:
+    name: Failed tasks integration test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
+
+      - name: Install cmake
+        uses: lukka/get-cmake@28983e0d3955dba2bb0a6810caae0c6cf268ec0c # latest
+
+      - uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # pin@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - uses: swatinem/rust-cache@81d053bdb0871dcd3f10763c8cc60d0adc41762b # pin@v1
+        with:
+          key: ${{ github.job }}
+
+      - uses: astral-sh/setup-uv@5a7eac68fb9809dea845d802897dc5c723910fa3 # v7.1.3
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - name: Run failed tasks integration test
+        run: |
+          make test-failed-tasks

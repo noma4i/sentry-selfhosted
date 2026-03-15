@@ -1,0 +1,16 @@
+minVersion: "2.19.0"
+changelogPolicy: auto
+artifactProvider:
+  name: none
+statusProvider:
+  name: github
+  config:
+    contexts:
+    - 'build-arm64'
+    - 'build-amd64'
+    - 'assemble-taskbroker-image'
+preReleaseCommand: ""
+targets:
+- name: github
+versioning:
+  policy: calver

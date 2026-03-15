@@ -1,0 +1,20 @@
+[package]
+name = "process-event"
+publish = false
+version = "26.3.1"
+authors = ["Sentry <hello@getsentry.com>"]
+edition = "2024"
+license-file = "../../LICENSE.md"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+reqwest = { workspace = true, features = [
+    "blocking",
+    "json",
+    "multipart",
+    "hickory-dns",
+] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+symbolic = { workspace = true }

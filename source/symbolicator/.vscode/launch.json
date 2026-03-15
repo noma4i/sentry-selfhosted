@@ -1,0 +1,40 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug",
+      "program": "${workspaceFolder}/target/debug/symbolicator",
+      "args": ["run", "-c", "local.yml"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "cargo build"
+    },
+    {
+      "type": "lldb",
+      "request": "attach",
+      "name": "Attach to running process",
+      "program": "${workspaceFolder}/target/debug/symbolicator",
+      "stopOnEntry": true,
+      "pid": "${command:pickMyProcess}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "sourceLanguages": ["rust"],
+      "name": "symbolicli",
+      "program": "${workspaceFolder}/target/debug/symbolicli",
+      "args": ["--offline", "..."],
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "cwd": "${workspaceFolder}",
+      "cargo": {
+        "args": ["build", "--package", "symbolicli"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,262 @@
+name: image
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches:
+      - master
+      - release/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build-setup:
+    name: Setup build metadata
+    runs-on: ubuntu-latest
+
+    env:
+      FULL_CI: "${{
+        github.event_name != 'pull_request'
+        || contains(github.event.pull_request.labels.*.name, 'Trigger: Full-CI')
+      }}"
+
+    steps:
+      - id: set-outputs
+        run: |
+          echo "full_ci=$FULL_CI" >> $GITHUB_OUTPUT
+
+          if [[ "$FULL_CI" == "true" ]]; then
+            echo "Running full CI"
+            echo 'archs=["amd64", "arm64"]' >> $GITHUB_OUTPUT
+          else
+            echo "Skipping some CI steps"
+            echo 'archs=["amd64"]' >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      archs: "${{ steps.set-outputs.outputs.archs }}"
+      full_ci: "${{ steps.set-outputs.outputs.full_ci }}"
+
+
+  build-binaries:
+    needs: build-setup
+
+    strategy:
+      matrix:
+        arch: ${{ fromJson(needs.build-setup.outputs.archs) }}
+
+    runs-on: |-
+      ${{fromJson('{
+        "amd64": "ubuntu-22.04",
+        "arm64": "ubuntu-22.04-arm"
+      }')[matrix.arch] }}
+
+    env:
+      FEATURES: "symbolicator-crash"
+      RUST_TARGET: |-
+        ${{fromJson('{
+          "amd64": "x86_64-unknown-linux-gnu",
+          "arm64": "aarch64-unknown-linux-gnu",
+        }')[matrix.arch] }}
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm curl
+
+      - name: Install Rust Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target "${RUST_TARGET}" --no-self-update
+
+      - name: Install sentry-cli
+        run: curl -sL https://sentry.io/get-cli/ | bash
+
+      - uses: swatinem/rust-cache@7939da402645ba29a2df566723491a2c856e8f8a # v2
+        if: ${{ !startsWith(github.ref_name, 'release/') }}
+        with:
+          key: ${{ github.job }}
+          save-if: ${{ github.ref_name == 'master' }}
+
+      - name: Build Binary
+        run: |
+          cargo build --release --locked --target="${RUST_TARGET}" --features="${FEATURES}"
+          mv "target/${RUST_TARGET}/release/symbolicator" ./symbolicator
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: symbolicator-binary-${{ matrix.arch }}
+          path: ./symbolicator
+
+      - name: Split debug info
+        run: |
+          mkdir -p "/tmp/debug-info/"
+
+          llvm-objcopy --only-keep-debug symbolicator{,.debug}
+          llvm-objcopy --strip-debug --strip-unneeded symbolicator
+          llvm-objcopy --add-gnu-debuglink symbolicator{.debug,}
+
+          SOURCE_BUNDLE="$(sentry-cli difutil bundle-sources symbolicator.debug)"
+
+          zip /tmp/debug-info/symbolicator-${{ matrix.arch }}-debug.zip symbolicator.debug
+          mv "${SOURCE_BUNDLE}" /tmp/debug-info/symbolicator-${{ matrix.arch }}.src.zip
+
+      - name: Upload Debug Info
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: symbolicator-debug@${{ matrix.arch }}
+          path: /tmp/debug-info/*
+
+  assemble:
+    needs: [build-setup, build-binaries]
+    if: "needs.build-setup.outputs.full_ci == 'true'"
+
+    name: Assemble
+    runs-on: ubuntu-latest
+
+    permissions:
+      packages: write  # required for GHCR
+      contents: read
+      id-token: write  # required for GAR
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download Binaries
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v5
+        with:
+          pattern: symbolicator-binary-*
+          path: /tmp/docker-ctx
+
+      - name: Prepare Docker Context
+        run: |
+          cp Dockerfile /tmp/docker-ctx
+          mkdir -p /tmp/docker-ctx/binaries/linux/amd64 /tmp/docker-ctx/binaries/linux/arm64
+          mv /tmp/docker-ctx/symbolicator-binary-amd64/symbolicator /tmp/docker-ctx/binaries/linux/amd64
+          mv /tmp/docker-ctx/symbolicator-binary-arm64/symbolicator /tmp/docker-ctx/binaries/linux/arm64
+
+      # If action-build-and-push-images supports passing in a docker tar,
+      # then we can reuse the image artifact rather than this workaround
+      # (thankfully the build amounts to just a cp, wouldn't be doing this
+      # if the build was more complicated as we're building twice)
+      - name: Build and push images
+        if: "needs.build-setup.outputs.full_ci == 'true'"
+        uses: getsentry/action-build-and-push-images@b172ab61a5f7eabd58bd42ce231b517e79947c01
+        with:
+          image_name: 'symbolicator'
+          # Please note that multiplatform builds like this are only feasible in this case
+          # because the docker build essentially amounts to copying files, not compiling.
+          platforms: linux/amd64,linux/arm64
+          build_context: '/tmp/docker-ctx'
+          ghcr: true
+          google_ar: true
+          # note: nightly will only be tagged if on default branch
+          tag_nightly: true
+          # on GAR we expect latest tags, nightly is canonically only a GHCR thing for us
+          tag_latest: true
+          google_ar_image_name: us-central1-docker.pkg.dev/sentryio/symbolicator/image
+          google_workload_identity_provider: projects/868781662168/locations/global/workloadIdentityPools/prod-github/providers/github-oidc-pool
+          google_service_account: gha-gcr-push@sac-prod-sa.iam.gserviceaccount.com
+
+  gocd-artifacts:
+    needs: [build-setup, build-binaries]
+    if: "needs.build-setup.outputs.full_ci == 'true'"
+
+    name: Upload gocd artifacts
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/868781662168/locations/global/workloadIdentityPools/prod-github/providers/github-oidc-pool
+          service_account: gha-gcr-push@sac-prod-sa.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+        with:
+          version: ">= 390.0.0"
+
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v5
+        with:
+          pattern: "symbolicator-debug@*"
+          path: /tmp/debug-info/
+          merge-multiple: true
+
+      - name: Upload gocd deployment assets
+        run: |
+          gsutil -m cp /tmp/debug-info/symbolicator*.zip "gs://dicd-team-devinfra-cd--symbolicator/difs/${{ github.sha }}/"
+
+  prepare-self-hosted-end-to-end:
+    needs: [build-binaries]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download amd64 binary
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v5
+        with:
+          pattern: symbolicator-binary-amd64
+          path: /tmp/docker-ctx
+
+      - name: Prepare Docker Context
+        run: |
+          cp Dockerfile /tmp/docker-ctx
+          mkdir -p /tmp/docker-ctx/binaries/linux/amd64
+          mv /tmp/docker-ctx/symbolicator /tmp/docker-ctx/binaries/linux/amd64
+
+      - name: Build amd64 Image
+        uses: getsentry/action-build-and-push-images@b172ab61a5f7eabd58bd42ce231b517e79947c01
+        with:
+          image_name: 'symbolicator'
+          tags: 'symbolicator-self-hosted'
+          platforms: linux/amd64
+          build_context: '/tmp/docker-ctx'
+          ghcr: false
+          google_ar: false
+          outputs: type=docker,dest=/tmp/symbolicator-amd64.tar
+
+      - name: Upload amd64 Image to GitHub Artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: symbolicator-self-hosted-amd64
+          path: /tmp/symbolicator-amd64.tar
+
+  self-hosted-end-to-end:
+    needs: [prepare-self-hosted-end-to-end]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download amd64 Image from GitHub Artifacts
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v5
+        with:
+          name: symbolicator-self-hosted-amd64
+          path: /tmp/
+
+      - name: Load Image
+        run: |
+          docker load --input /tmp/symbolicator-amd64.tar
+          docker image ls
+
+      - name: Clean up Docker tar file
+        run: rm -rf /tmp/symbolicator-amd64.tar
+
+      - name: Run Sentry self-hosted e2e CI
+        uses: getsentry/self-hosted@master
+        with:
+          project_name: symbolicator
+          image_url: symbolicator-self-hosted
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

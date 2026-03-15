@@ -1,0 +1,24 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/vroom
+/downloader
+/issuedetection
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+/gocd/templates/vendor/
+/gocd/generated-pipelines/
+
+# IDE
+.vscode/
+
+.DS_Store
+__pycache__

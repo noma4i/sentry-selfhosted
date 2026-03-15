@@ -1,0 +1,69 @@
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+    - id: check-case-conflict
+    - id: check-executables-have-shebangs
+    - id: check-merge-conflict
+    - id: check-symlinks
+    - id: end-of-file-fixer
+      exclude_types: [svg]
+      exclude: "^clients/CHANGELOG.md"
+    - id: trailing-whitespace
+      exclude_types: [svg]
+    - id: check-added-large-files
+      args: ['--maxkb=1024']
+
+- repo: local
+  hooks:
+    - id: rustfmt
+      name: format rust code
+      language: system
+      types: [rust]
+      # keep edition in sync with Cargo.toml
+      # There is no way to run cargo fmt for specific files,
+      # rustfmt can do it but doesn't read Cargo.toml.
+      # https://github.com/rust-lang/rustfmt/issues/4485
+      entry: rustfmt --edition=2024
+
+    # Configuration for black exists in pyproject.toml,
+    # but we let pre-commit take care of the file filtering.
+    - id: black
+      name: black
+      entry: .venv/bin/black
+      language: system
+      types_or: [python, pyi]
+      require_serial: true
+
+    # Configuration for isort exists in pyproject.toml,
+    # but we let pre-commit take care of the file filtering.
+    - id: isort
+      name: isort
+      entry: isort
+      language: system
+      types: [python]
+
+    # Configuration for flake8 exists in setup.cfg,
+    # but we let pre-commit take care of the file filtering.
+    - id: flake8
+      name: flake8
+      entry: flake8
+      language: system
+      types: [python]
+      require_serial: true
+
+    - id: mypy
+      name: mypy-tests
+      entry: "mypy"
+      files: "^integration_tests/.*"
+      language: system
+      types: [python]
+      require_serial: true
+
+    - id: mypy
+      name: mypy-client
+      entry: "mypy"
+      files: "^clients/python/.*"
+      language: system
+      types: [python]
+      require_serial: true

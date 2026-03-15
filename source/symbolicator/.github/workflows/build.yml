@@ -1,0 +1,161 @@
+name: Release build
+
+on:
+  push:
+    branches:
+      - release/**
+
+jobs:
+  linux:
+    name: Build Binary on Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6.0.2
+
+      - name: Install rust stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - name: Run cargo build
+        run: cargo build --bins --release --locked
+
+      - name: Split and archive debug info
+        run: |
+          mkdir -p build
+
+          # Split only symbolicator's debug information
+          objcopy --only-keep-debug target/release/symbolicator{,.debug}
+          objcopy --strip-debug --strip-unneeded target/release/symbolicator
+          objcopy --add-gnu-debuglink target/release/symbolicator{.debug,}
+          zip -j build/symbolicator-Linux-${{ matrix.arch }}-debug.zip target/release/symbolicator.debug
+
+          # Strip debug info for tools
+          objcopy --strip-debug --strip-unneeded target/release/wasm-split
+          objcopy --strip-debug --strip-unneeded target/release/symsorter
+          objcopy --strip-debug --strip-unneeded target/release/symbolicli
+
+          # Move all binaries
+          mv target/release/symbolicator build/symbolicator-Linux-${{ matrix.arch }}
+          mv target/release/wasm-split build/wasm-split-Linux-${{ matrix.arch }}
+          mv target/release/symsorter build/symsorter-Linux-${{ matrix.arch }}
+          mv target/release/symbolicli build/symbolicli-Linux-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact-linux-${{ matrix.arch }}-${{ github.sha }}
+          path: build/*
+          if-no-files-found: 'error'
+          # since this artifact will be merged, compression is not necessary
+          compression-level: '0'
+
+  mac:
+    # Note: This doesn't use a build matrix, as it requires a last step to merge the x86
+    # and ARM binaries into one universal one. This need will go away once
+    # https://github.com/rust-lang/cargo/issues/8875 is resolved.
+    name: Build Binary on MacOS
+    runs-on: macos-14
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6.0.2
+
+      - name: Install rust stable toolchain
+        run: rustup toolchain install stable --profile minimal --target x86_64-apple-darwin --target aarch64-apple-darwin --no-self-update
+
+      - name: Run cargo build for x86_64
+        run: cargo build --bins --release --locked --target=x86_64-apple-darwin
+        env:
+          # Generates separate debug symbol files alongside release builds
+          CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: packed
+
+      - name: Run cargo build for ARM
+        run: cargo build --bins --release --locked --target=aarch64-apple-darwin
+        env:
+          # Generates separate debug symbol files alongside release builds
+          CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: packed
+
+      - name: Archive debug info and create universal binary
+        run: |
+          mkdir -p build
+
+          lipo -create -output build/symbolicator-Darwin-universal \
+              target/x86_64-apple-darwin/release/symbolicator      \
+              target/aarch64-apple-darwin/release/symbolicator
+
+          lipo -create -output build/wasm-split-Darwin-universal \
+              target/x86_64-apple-darwin/release/wasm-split      \
+              target/aarch64-apple-darwin/release/wasm-split
+
+          lipo -create -output build/symsorter-Darwin-universal \
+              target/x86_64-apple-darwin/release/symsorter      \
+              target/aarch64-apple-darwin/release/symsorter
+
+          lipo -create -output build/symbolicli-Darwin-universal \
+              target/x86_64-apple-darwin/release/symbolicli      \
+              target/aarch64-apple-darwin/release/symbolicli
+
+          cd target/x86_64-apple-darwin/release
+          # Recursive zip the debug symbol folder and place the output in the output directory
+          zip -r ../../../build/symbolicator-x86_64-apple-darwin-debug.zip symbolicator.dSYM
+          cd ../../../
+
+          cd target/x86_64-apple-darwin/release
+          zip -r ../../../build/symbolicator-aarch64-apple-darwin-debug.zip symbolicator.dSYM
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact-mac-${{ github.sha }}
+          path: build/*
+          if-no-files-found: 'error'
+          # since this artifact will be merged, compression is not necessary
+          compression-level: '0'
+
+  windows:
+    name: Build Tools on Windows
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Install rust stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - name: Run cargo build
+        run: cargo build --bins --release --locked
+
+      - name: Rename Binaries
+        run: |
+          cd target/release
+          mv symbolicator.exe symbolicator-Windows-x86_64.exe
+          mv symsorter.exe symsorter-Windows-x86_64.exe
+          mv symbolicli.exe symbolicli-Windows-x86_64.exe
+          mv wasm-split.exe wasm-split-Windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact-windows-${{ github.sha }}
+          path: target/release/*-Windows-x86_64.exe
+          if-no-files-found: 'error'
+          # since this artifact will be merged, compression is not necessary
+          compression-level: '0'
+
+  merge:
+    name: Create Release Artifact
+    runs-on: ubuntu-latest
+    needs: [linux, mac, windows]
+    steps:
+      - uses: actions/upload-artifact/merge@v4
+        with:
+          # Craft expects release assets from github to be a single artifact named after the sha.
+          name: ${{ github.sha }}
+          pattern: artifact-*
+          delete-merged: true

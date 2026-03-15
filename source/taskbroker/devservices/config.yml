@@ -1,0 +1,53 @@
+# Ignored by docker compose, used by devservices
+x-sentry-service-config:
+  version: 0.1
+  service_name: taskbroker
+  dependencies:
+    kafka:
+      description: Shared instance of kafka used by sentry services
+      remote:
+        repo_name: sentry-shared-kafka
+        branch: main
+        repo_link: https://github.com/getsentry/sentry-shared-kafka
+    redis:
+      description: Shared instance of redis used by sentry services
+      remote:
+        repo_name: sentry-shared-redis
+        branch: main
+        repo_link: https://github.com/getsentry/sentry-shared-redis.git
+    postgres:
+      description: Shared instance of postgres used by sentry services
+      remote:
+        repo_name: sentry-shared-postgres
+        branch: main
+        repo_link: https://github.com/getsentry/sentry-shared-postgres.git
+    taskbroker:
+      description: Taskbroker service
+  modes:
+    default: [kafka, postgres]
+    client: [kafka, redis, postgres]
+    containerized: [kafka, redis, postgres, taskbroker]
+
+x-programs:
+  devserver:
+    command: cargo run
+
+services:
+  taskbroker:
+    image: ghcr.io/getsentry/taskbroker:nightly
+    environment:
+      TASKBROKER_KAFKA_CLUSTER: "kafka-kafka-1:9093"
+      TASKBROKER_CREATE_MISSING_TOPICS: "true"
+    ports:
+      - 127.0.0.1:50051:50051
+    networks:
+      - devservices
+    labels:
+      - orchestrator=devservices
+    restart: unless-stopped
+    platform: linux/amd64
+
+networks:
+  devservices:
+    name: devservices
+    external: true

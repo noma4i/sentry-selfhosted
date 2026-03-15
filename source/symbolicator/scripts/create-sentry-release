@@ -1,0 +1,40 @@
+#!/bin/bash
+set -eu
+# Required environment variables:
+#   SENTRY_AUTH_TOKEN: Sentry auth token (https://sentry.io/settings/account/api/auth-tokens/)
+
+VERSION="${1:-}"
+ENVIRONMENT="${2:-}"
+# GITHUB_PROJECT="getsentry/symbolicator"
+
+if [ -z "${VERSION}" ]; then
+  echo 'No version specified' && exit 1
+fi
+
+if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+  echo 'No Sentry auth token found' && exit 1
+fi
+
+if [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
+  echo 'No SENTRY_ORG or SENTRY_PROJECT provided' && exit 1
+fi
+
+sentry-cli --version
+
+echo 'Pulling debug information...'
+gsutil cp \
+  "gs://dicd-team-devinfra-cd--symbolicator/difs/${VERSION}/symbolicator-*.zip" \
+  .
+
+echo 'Uploading debug information and source bundle...'
+sentry-cli upload-dif ./symbolicator-*.zip
+
+echo 'Creating a new deploy in Sentry...'
+sentry-cli releases new "${VERSION}"
+# NOTE: linking commits requires a valid GitHub integration in Sentry4Sentry, which we don't have.
+# sentry-cli releases set-commits "${VERSION}" --commit "${GITHUB_PROJECT}@${VERSION}"
+if [ ! -z "${ENVIRONMENT:-}" ]; then
+  sentry-cli releases deploys "${VERSION}" new -e "${ENVIRONMENT}"
+fi
+sentry-cli releases finalize "${VERSION}"
+echo 'Deploy created.'

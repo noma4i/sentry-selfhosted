@@ -1,0 +1,21 @@
+/target
+
+# Editors
+.DS_Store
+.claude
+
+# Sqlite artifacts
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/integration_tests/.tests_output/
+**/.venv
+clients/python/.coverage*
+clients/python/coverage.xml
+
+.VERSION
+VERSION

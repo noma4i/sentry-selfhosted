@@ -1,0 +1,88 @@
+name: continuous-integration
+
+on:
+  pull_request:
+    branches:
+      - "*"
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  SHELL: /bin/bash
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changes
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          list-files: json
+          filters: |
+            all:
+              - added|modified: '**/*'
+
+      - uses: actions/setup-go@v6
+
+      # this is way too slow to add to pre-commit
+      - run: go mod tidy
+
+      - run: go install golang.org/x/tools/cmd/goimports@v0.36.0
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.4
+          install-mode: binary
+          # we're just using their official action to install;
+          # running should be consolidated into pre-commit
+          args: "--help"
+
+      - uses: astral-sh/setup-uv@884ad927a57e558e7a70b92f2bccf9198a4be546 # v6
+        with:
+          version: "0.8.2"
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@0958463ee0e02b9e8aa8f8e031afae1f84b80881 # v3.0.0
+        with:
+          python-version: 3.13.5
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/pre-commit
+          key: cache-epoch-1|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml', 'uv.lock') }}
+
+      - name: Install pre-commit
+        run: pre-commit install-hooks
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files
+
+  test-vroom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493 # v5.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+      - run: make test

@@ -1,0 +1,20 @@
+[package]
+name = "symsorter"
+version = "26.3.1"
+authors = ["Sentry <hello@getsentry.com>"]
+edition = "2024"
+license-file = "../../LICENSE.md"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+console = { workspace = true }
+rayon = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+symbolic = { workspace = true, features = ["debuginfo-serde"] }
+walkdir = { workspace = true }
+zip = { workspace = true, features = ["bzip2"] }
+zstd = { workspace = true }

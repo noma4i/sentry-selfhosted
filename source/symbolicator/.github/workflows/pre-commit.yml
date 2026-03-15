@@ -1,0 +1,59 @@
+name: pre-commit
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+# Cancel in progress workflows on pull_requests.
+# https://docs.github.com/en/actions/using-jobs/using-concurrency#example-using-a-fallback-value
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # the default default is:
+    #      bash --noprofile --norc -eo pipefail {0}
+    shell: bash --noprofile --norc -eo pipefail -ux {0}
+
+jobs:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Get changed files
+        id: changes
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          list-files: json
+          filters: |
+            all:
+              - added|modified: '**/*'
+
+      - uses: astral-sh/setup-uv@884ad927a57e558e7a70b92f2bccf9198a4be546 # v6
+        with:
+          version: '0.8.2'
+          # we just cache the venv-dir directly in action-setup-venv
+          enable-cache: false
+
+      - uses: getsentry/action-setup-venv@5a80476d175edf56cb205b08bc58986fa99d1725 # v3.2.0
+        with:
+          cache-dependency-path: uv.lock
+          install-cmd: uv sync --frozen --only-dev --active
+
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ~/.cache/pre-commit
+          key: cache-epoch-1|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml', 'uv.lock') }}
+
+      - name: Install pre-commit
+        run: pre-commit install-hooks
+
+      - name: Run pre-commit
+        run: |
+          jq '.[]' --raw-output <<< '${{steps.changes.outputs.all_files}}' |
+            xargs pre-commit run --files
