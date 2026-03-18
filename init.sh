@@ -3,34 +3,36 @@ set -euo pipefail
 
 echo "=== Sentry Local Init ==="
 
+source .env
+
 # 1. Build all images from source
 echo "[1/10] Building images from source..."
 ./build.sh
 
-# 2. Generate secret key if not set
-if ! grep -q SENTRY_SYSTEM_SECRET_KEY .env 2>/dev/null; then
-  echo "[2/10] Generating secret key..."
-  SECRET_KEY=$(docker compose run --rm web sentry config generate-secret-key 2>/dev/null | tail -1)
-  echo "SENTRY_SYSTEM_SECRET_KEY=$SECRET_KEY" >> .env
-  echo "  Secret key saved to .env"
-else
-  echo "[2/10] Secret key already exists"
-fi
+# 2. Start infra services (needed for all subsequent steps)
+echo "[2/10] Starting infrastructure..."
+docker compose up -d postgres redis kafka clickhouse seaweedfs smtp pgbouncer
+echo "  Waiting for services to be healthy..."
+sleep 25
 
 # 3. Generate relay credentials if missing
-if [ ! -f relay-conf/credentials.json ]; then
+if [ ! -f relay-conf/credentials.json ] || [ ! -s relay-conf/credentials.json ]; then
   echo "[3/10] Generating relay credentials..."
-  docker compose run --rm relay credentials generate --stdout > relay-conf/credentials.json
+  docker run --rm --entrypoint /bin/relay "$RELAY_IMAGE" credentials generate --stdout > relay-conf/credentials.json
   echo "  Relay credentials saved"
 else
   echo "[3/10] Relay credentials already exist"
 fi
 
-# 4. Start infra services
-echo "[4/10] Starting infrastructure..."
-docker compose up -d postgres redis kafka clickhouse seaweedfs smtp pgbouncer
-echo "  Waiting for services to be healthy..."
-sleep 20
+# 4. Generate secret key if not set
+if ! grep -q SENTRY_SYSTEM_SECRET_KEY .env 2>/dev/null; then
+  echo "[4/10] Generating secret key..."
+  SECRET_KEY=$(docker compose run --rm web sentry config generate-secret-key 2>/dev/null | tail -1)
+  echo "SENTRY_SYSTEM_SECRET_KEY=$SECRET_KEY" >> .env
+  echo "  Secret key saved to .env"
+else
+  echo "[4/10] Secret key already exists"
+fi
 
 # 5. Create Kafka topics
 echo "[5/10] Creating Kafka topics..."
@@ -50,15 +52,13 @@ docker compose run --rm web sentry upgrade --noinput
 
 # 8. Create S3 buckets
 echo "[8/10] Creating S3 buckets..."
-docker compose exec web python3 -c "
+docker compose run --rm web python3 -c "
 import boto3
 s3 = boto3.client('s3', endpoint_url='http://seaweedfs:8333', aws_access_key_id='sentry', aws_secret_access_key='sentry', region_name='us-east-1')
 for bucket in ['nodestore', 'profiles']:
     try:
         s3.create_bucket(Bucket=bucket)
         print(f'  Created bucket: {bucket}')
-    except s3.exceptions.BucketAlreadyExists:
-        print(f'  Bucket exists: {bucket}')
     except Exception as e:
         if 'BucketAlreadyOwnedByYou' in str(e) or 'BucketAlreadyExists' in str(e):
             print(f'  Bucket exists: {bucket}')
@@ -93,11 +93,14 @@ echo "Starting all services..."
 docker compose up -d
 
 echo ""
+echo "Waiting for all services to be healthy..."
+sleep 30
+
+echo ""
 echo "=== Init complete! ==="
 echo ""
 echo "  URL:      http://localhost:9000"
 echo "  Email:    admin@localhost"
 echo "  Password: admin123"
 echo ""
-echo "  Check status: docker compose ps"
-echo "  Check memory: docker stats --no-stream"
+docker compose ps --format "table {{.Name}}\t{{.Status}}"

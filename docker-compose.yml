@@ -10,10 +10,6 @@ x-healthcheck-defaults: &healthcheck_defaults
 x-sentry-defaults: &sentry_defaults
   <<: *restart_policy
   image: sentry-self-hosted-local
-  build:
-    context: ./sentry-conf
-    args:
-      - SENTRY_IMAGE
   depends_on:
     redis:
       condition: service_healthy
