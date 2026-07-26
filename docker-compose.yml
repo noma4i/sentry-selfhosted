@@ -32,6 +32,7 @@ x-sentry-defaults: &sentry_defaults
     VROOM: "http://vroom:8085"
     SENTRY_EVENT_RETENTION_DAYS:
     SENTRY_MAIL_HOST:
+    SENTRY_PUBLIC_URL:
     SENTRY_SYSTEM_SECRET_KEY:
   volumes:
     - "sentry-data:/data"
@@ -62,12 +63,15 @@ x-snuba-defaults: &snuba_defaults
 services:
   smtp:
     <<: *restart_policy
-    image: registry.gitlab.com/egos-tech/smtp
+    image: boky/postfix
     mem_limit: 64m
     volumes:
-      - "sentry-smtp:/var/spool/exim4"
+      - "dkim-keys:/etc/opendkim/keys"
     environment:
-      MAILNAME: ${SENTRY_MAIL_HOST:-}
+      ALLOWED_SENDER_DOMAINS: ${SENTRY_MAIL_HOST:-}
+      HOSTNAME: ${SENTRY_MAIL_HOSTNAME:-}
+      DKIM_AUTOGENERATE: "false"
+      DKIM_SELECTOR: ${SENTRY_DKIM_SELECTOR:-}
 
   redis:
     <<: *restart_policy
@@ -163,7 +167,7 @@ services:
   clickhouse:
     <<: *restart_policy
     image: "altinity/clickhouse-server:25.3.6.10034.altinitystable"
-    mem_limit: 2g
+    mem_limit: 4g
     ulimits:
       nofile:
         soft: 262144
@@ -244,7 +248,7 @@ services:
 
   web:
     <<: *sentry_defaults
-    mem_limit: 1g
+    mem_limit: 2g
     ulimits:
       nofile:
         soft: 4096
@@ -371,6 +375,9 @@ volumes:
   sentry-taskbroker:
   sentry-secrets:
   sentry-smtp:
+  dkim-keys:
+    external: true
+    name: ${SENTRY_DKIM_VOLUME:-}
   sentry-nginx-cache:
   sentry-kafka-log:
   sentry-clickhouse-log:

@@ -24,3 +24,15 @@ filestore.profiles-options:
 symbolicator.enabled: false
 
 transaction-events.force-disable-internal-project: true
+
+# GitHub App credentials (optional integration). Fill in locally; this file is
+# a template - the real config.yml is untracked because it holds a private key.
+# github-app.id: 0
+# github-app.name: "<app-name>"
+# github-app.webhook-secret: "<secret>"
+# github-app.client-id: "<client-id>"
+# github-app.client-secret: "<client-secret>"
+# github-app.private-key: |
+#   -----BEGIN RSA PRIVATE KEY-----
+#   <contents of sentry-conf/github-app.pem>
+#   -----END RSA PRIVATE KEY-----

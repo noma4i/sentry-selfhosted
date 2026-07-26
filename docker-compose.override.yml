@@ -1,0 +1,17 @@
+# Local overrides on top of the upstream Sentry self-hosted compose file.
+#
+# snuba-api: the upstream healthcheck opens a raw /dev/tcp socket and pipes it
+# into `grep ok -s -m 1`. With the granian WSGI server the connection is kept
+# alive, so grep never sees EOF and the check hangs until the 30s timeout on
+# every run. Result: the container is permanently reported unhealthy while the
+# service is fine, and every timed-out check leaks a zombie `grep` because the
+# snuba-api PID 1 does not reap children.
+# curl against the same endpoint returns immediately.
+services:
+  snuba-api:
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "--max-time", "10", "http://127.0.0.1:1218/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 30s

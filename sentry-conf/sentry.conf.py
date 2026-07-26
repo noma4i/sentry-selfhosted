@@ -129,7 +129,7 @@ SENTRY_WEB_OPTIONS = {
     "buffer-size": 32768,
     "limit-post": 209715200,
     "disable-logging": True,
-    "reload-on-rss": 400,
+    "reload-on-rss": 900,
     "ignore-sigpipe": True,
     "ignore-write-errors": True,
     "disable-write-exception": True,
@@ -172,3 +172,13 @@ SENTRY_FEATURES.update(
 GEOIP_PATH_MMDB = "/geoip/GeoLite2-City.mmdb"
 CSP_REPORT_ONLY = True
 JS_SDK_LOADER_DEFAULT_SDK_URL = "https://browser.sentry-cdn.com/%s/bundle%s.min.js"
+
+_public_url = env("SENTRY_PUBLIC_URL", "")
+if _public_url:
+    CSRF_TRUSTED_ORIGINS = [_public_url]
+    SENTRY_OPTIONS["system.url-prefix"] = _public_url
+
+
+SENTRY_FEATURES['integrations-scm-multi-org'] = True
+SENTRY_FEATURES['organizations:integrations-scm-multi-org'] = True
+SENTRY_FEATURES['organizations:github-multi-org-upsell-modal'] = True
