@@ -3,6 +3,15 @@
 Notable changes to this deployment, relative to the upstream
 `getsentry/self-hosted` compose stack.
 
+## 2026-10-03
+
+### Changed
+
+- `kafka` and `clickhouse` healthcheck interval raised to 30s with 10 retries
+  (via `docker-compose.override.yml`). Every check is a `docker exec`, and on a
+  host running dozens of containers the per-check overhead adds constant
+  baseline CPU for no extra safety.
+
 ## 2026-07-26
 
 ### Security
